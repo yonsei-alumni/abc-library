@@ -9,12 +9,15 @@ export DB_PWD=""
 # 같은 디렉터리에서 실행한 Claude Code 같은 도구가 이 키를 자동으로 가져다 쓰지 않게 하기 위해서다.
 export CLAUDE_API_KEY=""
 
-# 관리자 로그인(선택). GOOGLE_CLIENT_ID가 없으면 관리자 로그인을 쓰지 않는다.
+# 로그인(선택). GOOGLE_CLIENT_ID가 없으면 로그인을 쓰지 않는다.
 # 로컬에서 쓰려면 Google OAuth 클라이언트의 승인된 리디렉션 URI에 http://localhost:8080/auth/callback을 더한다.
-# SESSION_SECRET은 32바이트 이상의 임의의 값이다(예: openssl rand -base64 48).
+# SESSION_SECRET과 USER_ID_SECRET은 32바이트 이상의 임의의 값이다(예: openssl rand -base64 48).
+# USER_ID_SECRET은 Google 계정 고유 번호를 HMAC-SHA256할 때 쓰는 키다. 없으면 관리자 로그인만 쓰고 북마크는 쓰지 않는다.
+# 바꾸면 모든 사용자가 새 사용자가 되어 북마크를 잃으므로 한 번 정하면 바꾸지 않는다.
 # export GOOGLE_CLIENT_ID=""
 # export GOOGLE_CLIENT_SECRET=""
 # export SESSION_SECRET=""
+# export USER_ID_SECRET=""
 # export SITE_URL="http://localhost:8080"
 
 # 선택 속성(기본값이 있음)

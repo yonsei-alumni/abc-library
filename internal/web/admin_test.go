@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -18,18 +19,27 @@ import (
 )
 
 type fakeLogin struct {
+	sub   string
 	email string
 	err   error
 	codes []string
+	// emails는 로그인 주소를 만들 때마다 메일 주소를 달라고 했는지 남긴다.
+	emails []bool
 }
 
-func (f *fakeLogin) AuthCodeURL(state string) string {
+func (f *fakeLogin) AuthCodeURL(state string, email bool) string {
+	f.emails = append(f.emails, email)
 	return "https://accounts.example.com/auth?state=" + url.QueryEscape(state)
 }
 
-func (f *fakeLogin) Exchange(_ context.Context, code string) (string, error) {
+// Exchange는 Google처럼 메일 주소를 달라고 했을 때만 메일 주소를 돌려준다.
+func (f *fakeLogin) Exchange(_ context.Context, code string) (auth.Account, error) {
 	f.codes = append(f.codes, code)
-	return f.email, f.err
+	a := auth.Account{Subject: f.sub}
+	if len(f.emails) > 0 && f.emails[len(f.emails)-1] {
+		a.Email = f.email
+	}
+	return a, f.err
 }
 
 type adminSite struct {
@@ -37,6 +47,7 @@ type adminSite struct {
 	st       *fakeStore
 	login    *fakeLogin
 	sessions *auth.Sessions
+	subjects *auth.Subjects
 	handler  http.Handler
 }
 
@@ -46,8 +57,12 @@ func newAdminSite(t *testing.T) *adminSite {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := &adminSite{t: t, st: &fakeStore{}, login: &fakeLogin{email: adminAddr}, sessions: sessions}
-	s, err := New(a.st, Config{BandNo: "102765569", Login: a.login, Sessions: sessions, SiteURL: "https://abc-lib.web.app"},
+	subjects, err := auth.NewSubjects(strings.Repeat("u", auth.MinSecretLen))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a := &adminSite{t: t, st: &fakeStore{}, login: &fakeLogin{sub: "109876543210987654321", email: adminAddr}, sessions: sessions, subjects: subjects}
+	s, err := New(a.st, Config{BandNo: "102765569", Login: a.login, Sessions: sessions, Subjects: subjects, SiteURL: "https://abc-lib.web.app"},
 		slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
@@ -89,6 +104,24 @@ func (a *adminSite) post(path string, form url.Values, cookies ...*http.Cookie) 
 
 func (a *adminSite) admin() *http.Cookie { return a.cookie(adminAddr) }
 
+// startLogin은 로그인 화면의 버튼을 누른 것처럼 로그인을 시작하고, Google에 보낸 state와 로그인 중의 쿠키를 돌려준다.
+func (a *adminSite) startLogin(next string, admin bool) (string, *http.Cookie) {
+	a.t.Helper()
+	form := url.Values{"next": {next}}
+	if admin {
+		form.Set("admin", "1")
+	}
+	rec := a.post("/login", form)
+	if rec.Code != http.StatusSeeOther {
+		a.t.Fatalf("로그인 시작 code = %d, 본문 = %s", rec.Code, rec.Body)
+	}
+	loc, _ := url.Parse(rec.Header().Get("Location"))
+	if loc.Host != "accounts.example.com" {
+		a.t.Fatalf("Google 로그인으로 보내야 한다: %s", loc)
+	}
+	return loc.Query().Get("state"), rec.Result().Cookies()[0]
+}
+
 func expectRedirect(t *testing.T, rec *httptest.ResponseRecorder, location string) {
 	t.Helper()
 	if rec.Code != http.StatusSeeOther && rec.Code != http.StatusFound {
@@ -109,15 +142,16 @@ func expectCalls(t *testing.T, st *fakeStore, want ...string) {
 
 func TestLoginFlow(t *testing.T) {
 	a := newAdminSite(t)
-	rec := a.get("/login?next=%2Fbooks%2F1")
-	if rec.Code != http.StatusFound {
+	// 로그인 화면은 Google로 넘어가기 전에 메일 주소를 받는 까닭을 알린다.
+	rec := a.get("/login?admin=1&next=%2Fbooks%2F1")
+	if rec.Code != http.StatusOK {
 		t.Fatalf("code = %d", rec.Code)
 	}
-	loc, _ := url.Parse(rec.Header().Get("Location"))
-	state := loc.Query().Get("state")
-	pending := rec.Result().Cookies()[0]
-	if loc.Host != "accounts.example.com" || state == "" || pending.Name != "__session" {
-		t.Fatalf("Google 로그인으로 보내야 한다: %s, %+v", loc, pending)
+	assertContains(t, rec.Body.String(), "관리자 로그인", "관리자 간의 의사소통을 위해 Google 계정의 메일 주소를 저장합니다", "관리자 목록 외에는 사용자의 메일 주소를 이 사이트의 데이터베이스에 저장하지 않습니다", `name="admin" value="1"`, `name="next" value="/books/1"`)
+
+	state, pending := a.startLogin("/books/1", true)
+	if state == "" || pending.Name != "__session" || !slices.Equal(a.login.emails, []bool{true}) {
+		t.Fatalf("관리자 로그인은 메일 주소를 달라고 해야 한다: %q, %+v, %v", state, pending, a.login.emails)
 	}
 
 	// 쿠키가 없거나 state가 다르면 다른 사이트가 꾸민 응답일 수 있으므로 받지 않는다.
@@ -144,7 +178,13 @@ func TestLoginFlow(t *testing.T) {
 		t.Errorf("로그인한 사람의 화면은 캐시하지 않아야 한다: %q", got)
 	}
 
+	// 관리자도 북마크를 쓸 수 있게 사용자로 함께 로그인한다.
+	if sess := a.read(session); sess.Email != adminAddr || sess.User == 0 || len(a.st.hashes) != 1 {
+		t.Errorf("관리자 세션 = %+v, 사용자 %v", sess, a.st.hashes)
+	}
+
 	// 이미 로그인했으면 바로 돌아간다.
+	expectRedirect(t, a.get("/login?admin=1&next=/tags", session), "/tags")
 	expectRedirect(t, a.get("/login?next=/tags", session), "/tags")
 
 	rec = a.post("/logout", nil, session)
@@ -156,11 +196,7 @@ func TestLoginFlow(t *testing.T) {
 
 func TestLoginRejectsNonAdminAndBadNext(t *testing.T) {
 	a := newAdminSite(t)
-	start := func(next string) (string, *http.Cookie) {
-		rec := a.get("/login?next=" + url.QueryEscape(next))
-		loc, _ := url.Parse(rec.Header().Get("Location"))
-		return loc.Query().Get("state"), rec.Result().Cookies()[0]
-	}
+	start := func(next string) (string, *http.Cookie) { return a.startLogin(next, true) }
 
 	// 다른 사이트 주소로는 돌려보내지 않는다.
 	for _, next := range []string{"//evil.example.com", "https://evil.example.com", "/\\evil.example.com", ""} {
@@ -169,6 +205,7 @@ func TestLoginRejectsNonAdminAndBadNext(t *testing.T) {
 	}
 
 	a.login.email = "member@example.com"
+	a.st.hashes = nil
 	state, c := start("/admin/tags")
 	rec := a.get("/auth/callback?code=c&state="+state, c)
 	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "관리자로 등록되지 않은 계정") {
@@ -176,6 +213,16 @@ func TestLoginRejectsNonAdminAndBadNext(t *testing.T) {
 	}
 	if c := rec.Result().Cookies()[0]; c.MaxAge >= 0 {
 		t.Error("관리자가 아니면 세션을 남기지 않아야 한다")
+	}
+	if len(a.st.hashes) != 0 {
+		t.Errorf("관리자 로그인에 실패하면 사용자를 만들지 않아야 한다: %v", a.st.hashes)
+	}
+
+	// 메일 주소를 확인하지 못한 계정은 관리자인지 알 수 없다.
+	a.login.email = ""
+	state, c = start("/admin/tags")
+	if rec := a.get("/auth/callback?code=c&state="+state, c); rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "확인된 메일 주소가 없는") {
+		t.Errorf("메일 주소 없는 관리자 로그인 code = %d", rec.Code)
 	}
 
 	a.login.err = errors.New("토큰 오류")
@@ -187,10 +234,10 @@ func TestLoginRejectsNonAdminAndBadNext(t *testing.T) {
 
 func TestAdminPagesNeedAdmin(t *testing.T) {
 	a := newAdminSite(t)
-	expectRedirect(t, a.get("/admin/tags"), "/login?next=%2Fadmin%2Ftags")
-	expectRedirect(t, a.get("/admin/books/1?x=1"), "/login?next=%2Fadmin%2Fbooks%2F1%3Fx%3D1")
+	expectRedirect(t, a.get("/admin/tags"), "/login?admin=1&next=%2Fadmin%2Ftags")
+	expectRedirect(t, a.get("/admin/books/1?x=1"), "/login?admin=1&next=%2Fadmin%2Fbooks%2F1%3Fx%3D1")
 	// 관리자에서 빠진 계정의 세션은 로그인하지 않은 것과 같다.
-	expectRedirect(t, a.get("/admin/tags", a.cookie("member@example.com")), "/login?next=%2Fadmin%2Ftags")
+	expectRedirect(t, a.get("/admin/tags", a.cookie("member@example.com")), "/login?admin=1&next=%2Fadmin%2Ftags")
 	for _, c := range [][]*http.Cookie{nil, {a.cookie("member@example.com")}} {
 		if rec := a.post("/admin/tags", url.Values{"name": {"기후"}, "kind": {"topic"}}, c...); rec.Code != http.StatusForbidden {
 			t.Errorf("관리자가 아닌 POST code = %d", rec.Code)
@@ -200,13 +247,13 @@ func TestAdminPagesNeedAdmin(t *testing.T) {
 
 	// 로그인하지 않은 방문자에게는 로그인 링크만 보인다.
 	body := a.get("/").Body.String()
-	assertContains(t, body, `href="/login?next=%2f"`, "관리자 로그인")
+	assertContains(t, body, `href="/login?admin=1&next=%2f"`, "관리자 로그인", `href="/login?next=%2f"`, "로그인")
 	if strings.Contains(body, `href="/admin/tags"`) {
 		t.Error("관리 메뉴는 관리자에게만 보여야 한다")
 	}
 
 	// 관리자 로그인을 설정하지 않은 서버에는 관리 화면이 없다.
-	for _, path := range []string{"/admin/tags", "/login", "/auth/callback"} {
+	for _, path := range []string{"/admin/tags", "/login", "/auth/callback", "/me", "/me/categories/1"} {
 		if code, _ := get(t, &fakeStore{}, path); code != http.StatusNotFound {
 			t.Errorf("%s: code = %d", path, code)
 		}

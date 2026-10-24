@@ -40,6 +40,13 @@ type fakeStore struct {
 	err     error
 	updated book.Book
 	links   []book.Link
+
+	// 사용자(HMAC 값 → 번호)와 받은 HMAC 값, 카테고리, 북마크([사용자, 책] → 카테고리 번호)다.
+	users    map[string]int64
+	hashes   []string
+	cats     []book.Category
+	marks    map[[2]int64][]int64
+	savedCat book.Category
 }
 
 func (f *fakeStore) record(format string, args ...any) error {

@@ -55,20 +55,37 @@ type Store interface {
 	IsAdmin(ctx context.Context, email string) (bool, error)
 	AddAdmin(ctx context.Context, email, addedBy string) error
 	DeleteAdmin(ctx context.Context, email string) error
+
+	UserID(ctx context.Context, subjectHash string) (int64, error)
+	UserExists(ctx context.Context, id int64) (bool, error)
+	DeleteUser(ctx context.Context, id int64) error
+	Categories(ctx context.Context, userID int64) ([]book.Category, error)
+	Category(ctx context.Context, userID, id int64) (book.Category, error)
+	CategoryByCode(ctx context.Context, code string) (book.Category, []book.Book, error)
+	CategoryBooks(ctx context.Context, categoryID int64) ([]book.Book, error)
+	AddCategory(ctx context.Context, userID int64, c book.Category) (int64, error)
+	UpdateCategory(ctx context.Context, userID int64, c book.Category) error
+	DeleteCategory(ctx context.Context, userID, id int64) error
+	Bookmark(ctx context.Context, userID, bookID int64) (bool, []int64, error)
+	SetBookmark(ctx context.Context, userID, bookID int64, categoryIDs []int64) error
+	DeleteBookmark(ctx context.Context, userID, bookID int64) error
+	Bookmarks(ctx context.Context, userID int64) ([]book.Bookmark, error)
 }
 
 // Login은 Google 계정 로그인이다. *auth.Google이 구현한다.
 type Login interface {
-	AuthCodeURL(state string) string
-	Exchange(ctx context.Context, code string) (email string, err error)
+	AuthCodeURL(state string, email bool) string
+	Exchange(ctx context.Context, code string) (auth.Account, error)
 }
 
 // Config는 Server의 설정이다.
 type Config struct {
 	BandNo string
-	// Login과 Sessions가 nil이면 관리자 로그인을 쓰지 않는다.
+	// Login과 Sessions가 nil이면 로그인을 쓰지 않는다.
 	Login    Login
 	Sessions *auth.Sessions
+	// Subjects가 nil이면 관리자 로그인만 쓰고, 북마크를 위한 사용자 로그인은 쓰지 않는다.
+	Subjects *auth.Subjects
 	// SiteURL은 사이트의 공개 주소다. 다른 사이트에서 보낸 POST 요청을 막을 때 이 주소는 믿는다.
 	SiteURL string
 }
@@ -79,6 +96,7 @@ type Server struct {
 	bandNo   string
 	login    Login
 	sessions *auth.Sessions
+	subjects *auth.Subjects
 	siteURL  string
 	log      *slog.Logger
 	pages    map[string]*template.Template
@@ -87,11 +105,14 @@ type Server struct {
 // New는 템플릿을 읽어 Server를 만든다.
 func New(st Store, cfg Config, log *slog.Logger) (*Server, error) {
 	s := &Server{
-		store: st, bandNo: cfg.BandNo, login: cfg.Login, sessions: cfg.Sessions, siteURL: cfg.SiteURL,
+		store: st, bandNo: cfg.BandNo, login: cfg.Login, sessions: cfg.Sessions, subjects: cfg.Subjects, siteURL: cfg.SiteURL,
 		log: log, pages: map[string]*template.Template{},
 	}
 	if (s.login == nil) != (s.sessions == nil) {
-		return nil, errors.New("관리자 로그인에는 Login과 Sessions가 모두 있어야 합니다")
+		return nil, errors.New("로그인에는 Login과 Sessions가 모두 있어야 합니다")
+	}
+	if s.subjects != nil && s.login == nil {
+		return nil, errors.New("사용자 로그인에는 Login과 Sessions가 있어야 합니다")
 	}
 	funcs := template.FuncMap{
 		"date":     func(t time.Time) string { return t.In(seoul).Format("2006년 1월 2일") },
@@ -105,9 +126,10 @@ func New(st Store, cfg Config, log *slog.Logger) (*Server, error) {
 		"join":     strings.Join,
 		"kindName": kindName,
 		"excerpt":  excerpt,
+		"markdown": markdown,
 	}
-	for _, page := range []string{"timeline", "books", "book", "tags", "authors", "error",
-		"admin-tags", "admin-book", "admin-mention", "admin-admins"} {
+	for _, page := range []string{"timeline", "books", "book", "tags", "authors", "error", "login",
+		"admin-tags", "admin-book", "admin-mention", "admin-admins", "me", "category", "shared"} {
 		t, err := template.New("").Funcs(funcs).ParseFS(templateFiles, "templates/layout.html", "templates/parts.html", "templates/"+page+".html")
 		if err != nil {
 			return nil, err
@@ -175,7 +197,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /books/{id}", s.book)
 	mux.HandleFunc("GET /tags", s.tags)
 	mux.HandleFunc("GET /authors", s.authors)
+	s.accountRoutes(mux)
 	s.adminRoutes(mux)
+	s.bookmarkRoutes(mux)
 	s.pwaRoutes(mux)
 	// Cloud Run 앞단의 Google Frontend가 정확히 /healthz만 가로채서 자체 404를 돌려주므로 /health도 연다.
 	health := func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) }
@@ -200,7 +224,7 @@ func (s *Server) Handler() http.Handler {
 	cop.SetDenyHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s.status(w, r, http.StatusForbidden, "요청을 처리할 수 없습니다", "다른 사이트에서 보낸 요청은 받지 않습니다.")
 	}))
-	handler := cop.Handler(s.withAdmin(mux))
+	handler := cop.Handler(s.withAccount(mux))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Robots-Tag", "noindex, nofollow")
 		handler.ServeHTTP(w, r)
@@ -290,10 +314,19 @@ func (s *Server) book(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	s.render(w, r, "book", "layout", map[string]any{
+	data := map[string]any{
 		"Title": b.Title, "Nav": "books", "Book": b, "Tags": tagViews(b.Tags, tags),
 		"Count": len(mentions), "Threads": book.Threads(mentions),
-	})
+	}
+	if uid := userID(r); uid != 0 {
+		panel, err := s.bookmarkPanel(r.Context(), uid, b.ID)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		data["Bookmark"] = panel
+	}
+	s.render(w, r, "book", "layout", data)
 }
 
 // tagView는 화면에 보여 줄 책의 태그다.
@@ -354,8 +387,13 @@ func nextPage(more bool, p int) int {
 
 func (s *Server) render(w http.ResponseWriter, r *http.Request, page, name string, data map[string]any) {
 	data["Admin"] = adminEmail(r)
+	data["User"] = userID(r) != 0
 	data["LoginEnabled"] = s.login != nil
+	data["UserLogin"] = s.subjects != nil
 	data["Path"] = r.URL.RequestURI()
+	if _, ok := data["Notice"]; !ok {
+		data["Notice"] = notices[r.URL.Query().Get("done")]
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.pages[page].ExecuteTemplate(w, name, data); err != nil {
 		s.log.Error("화면을 그리지 못했다", "path", r.URL.Path, "오류", err)

@@ -1,8 +1,6 @@
 package web
 
 import (
-	"context"
-	"crypto/subtle"
 	"errors"
 	"fmt"
 	"net/http"
@@ -13,7 +11,6 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/yonsei-alumni/abc-library/internal/auth"
 	"github.com/yonsei-alumni/abc-library/internal/book"
 	"github.com/yonsei-alumni/abc-library/internal/store"
 )
@@ -33,28 +30,6 @@ func adminEmail(r *http.Request) string {
 	return email
 }
 
-// withAdmin은 세션 쿠키의 계정이 관리자이면 요청에 그 메일 주소를 싣는다.
-// 관리자 목록은 요청마다 DB에서 확인하므로, 관리자에서 빼면 바로 권한이 없어진다.
-func (s *Server) withAdmin(next http.Handler) http.Handler {
-	if s.sessions == nil {
-		return next
-	}
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if sess, ok := s.sessions.Read(r); ok && sess.Email != "" {
-			// 로그인한 사람에게 보인 화면은 Firebase Hosting이나 브라우저가 캐시하지 않게 한다.
-			w.Header().Set("Cache-Control", "private, no-store")
-			admin, err := s.store.IsAdmin(r.Context(), sess.Email)
-			if err != nil {
-				s.log.Error("관리자인지 확인하지 못했다", "오류", err)
-			}
-			if admin {
-				r = r.WithContext(context.WithValue(r.Context(), adminKey{}, sess.Email))
-			}
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
 // requireAdmin은 관리자만 h를 쓰게 한다. 로그인하지 않았으면 GET 요청은 로그인 화면으로 보낸다.
 func (s *Server) requireAdmin(h http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -66,7 +41,7 @@ func (s *Server) requireAdmin(h http.HandlerFunc) http.Handler {
 			r.Body = http.MaxBytesReader(w, r.Body, maxForm)
 			h(w, r)
 		case r.Method == http.MethodGet:
-			http.Redirect(w, r, "/login?next="+url.QueryEscape(r.URL.RequestURI()), http.StatusSeeOther)
+			http.Redirect(w, r, "/login?admin=1&next="+url.QueryEscape(r.URL.RequestURI()), http.StatusSeeOther)
 		default:
 			s.status(w, r, http.StatusForbidden, "권한이 없습니다", "관리자만 할 수 있습니다.")
 		}
@@ -74,10 +49,6 @@ func (s *Server) requireAdmin(h http.HandlerFunc) http.Handler {
 }
 
 func (s *Server) adminRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /login", s.loginStart)
-	mux.HandleFunc("GET /auth/callback", s.loginCallback)
-	mux.HandleFunc("POST /logout", s.logout)
-
 	admin := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, s.requireAdmin(h)) }
 	admin("GET /admin", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin/tags", http.StatusSeeOther)
@@ -100,74 +71,7 @@ func (s *Server) adminRoutes(mux *http.ServeMux) {
 	admin("POST /admin/admins/delete", s.deleteAdmin)
 }
 
-// safeNext는 로그인한 뒤 돌아갈 경로다. 다른 사이트로 가는 주소는 받지 않는다.
-func safeNext(next string) string {
-	if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") || strings.HasPrefix(next, "/\\") {
-		return "/"
-	}
-	return next
-}
-
-func (s *Server) loginStart(w http.ResponseWriter, r *http.Request) {
-	if s.login == nil {
-		s.status(w, r, http.StatusNotFound, "찾을 수 없습니다", "관리자 로그인이 설정되지 않았습니다.")
-		return
-	}
-	next := safeNext(r.URL.Query().Get("next"))
-	if adminEmail(r) != "" {
-		http.Redirect(w, r, next, http.StatusSeeOther)
-		return
-	}
-	state := auth.NewState()
-	s.sessions.Set(w, auth.Session{State: state, Next: next}, loginTTL)
-	w.Header().Set("Cache-Control", "no-store")
-	http.Redirect(w, r, s.login.AuthCodeURL(state), http.StatusFound)
-}
-
-func (s *Server) loginCallback(w http.ResponseWriter, r *http.Request) {
-	if s.login == nil {
-		s.status(w, r, http.StatusNotFound, "찾을 수 없습니다", "관리자 로그인이 설정되지 않았습니다.")
-		return
-	}
-	w.Header().Set("Cache-Control", "no-store")
-	q := r.URL.Query()
-	if q.Get("error") != "" {
-		s.status(w, r, http.StatusBadRequest, "로그인하지 못했습니다", "Google 로그인을 취소했습니다.")
-		return
-	}
-	sess, ok := s.sessions.Read(r)
-	if !ok || sess.State == "" || subtle.ConstantTimeCompare([]byte(sess.State), []byte(q.Get("state"))) != 1 {
-		s.status(w, r, http.StatusBadRequest, "로그인하지 못했습니다", "로그인 요청이 만료되었습니다. 다시 시도해 주세요.")
-		return
-	}
-	email, err := s.login.Exchange(r.Context(), q.Get("code"))
-	if err != nil {
-		s.log.Warn("Google 로그인을 확인하지 못했다", "오류", err)
-		s.status(w, r, http.StatusBadRequest, "로그인하지 못했습니다", "Google 로그인을 확인하지 못했습니다. 다시 시도해 주세요.")
-		return
-	}
-	admin, err := s.store.IsAdmin(r.Context(), email)
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
-	if !admin {
-		s.sessions.Clear(w)
-		s.status(w, r, http.StatusForbidden, "권한이 없습니다", "관리자로 등록되지 않은 계정입니다.")
-		return
-	}
-	s.sessions.Set(w, auth.Session{Email: email}, sessionTTL)
-	http.Redirect(w, r, safeNext(sess.Next), http.StatusSeeOther)
-}
-
-func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
-	if s.sessions != nil {
-		s.sessions.Clear(w)
-	}
-	http.Redirect(w, r, "/", http.StatusSeeOther)
-}
-
-// notices는 관리 화면에서 고친 뒤 돌아온 화면에 보여 줄 안내다. 주소의 done 값으로 고른다.
+// notices는 고친 뒤 돌아온 화면에 보여 줄 안내다. 주소의 done 값으로 고른다.
 var notices = map[string]string{
 	"tag-added":       "태그를 더했습니다.",
 	"tag-renamed":     "태그 이름을 바꿨습니다. 책에 붙은 태그도 함께 바뀌었습니다.",
@@ -181,11 +85,16 @@ var notices = map[string]string{
 	"mention-deleted": "언급을 지웠습니다.",
 	"admin-added":     "관리자를 더했습니다.",
 	"admin-deleted":   "관리자를 지웠습니다.",
+
+	"bookmark-saved":   "북마크를 저장했습니다.",
+	"bookmark-deleted": "북마크를 뺐습니다.",
+	"category-added":   "카테고리를 만들었습니다. 본문과 공개 여부를 정해 주세요.",
+	"category-saved":   "카테고리를 저장했습니다.",
+	"category-deleted": "카테고리를 지웠습니다. 넣어 둔 북마크는 남아 있습니다.",
 }
 
 func (s *Server) renderAdmin(w http.ResponseWriter, r *http.Request, code int, page string, data map[string]any) {
 	data["Nav"] = "admin"
-	data["Notice"] = notices[r.URL.Query().Get("done")]
 	if _, ok := data["AdminNav"]; !ok {
 		data["AdminNav"] = ""
 	}

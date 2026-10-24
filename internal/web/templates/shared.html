@@ -1,0 +1,22 @@
+{{define "content"}}
+<article class="shared">
+  <h1 class="page-title">{{.Category.ShownTitle}}</h1>
+  {{if .Owner}}
+  <p class="notice" role="status">{{if .Category.Public}}공개한 카테고리입니다. 주소를 아는 누구나 이 화면을 봅니다.{{else}}공개하지 않은 카테고리입니다. 나에게만 보입니다.{{end}}
+    <a href="/me/categories/{{.Category.ID}}">편집</a></p>
+  {{end}}
+  {{with .Category.Body}}<div class="markdown">{{markdown .}}</div>{{end}}
+
+  <section class="shared-books">
+    <h2>책 {{len .Books}}권</h2>
+    {{if .Books}}
+    <ul class="shelf">
+      {{range .Books}}{{template "category-card" .}}{{end}}
+    </ul>
+    {{else}}
+    <p class="empty">아직 넣은 책이 없습니다.</p>
+    {{end}}
+  </section>
+  <p class="hint add-book-hint">{{template "add-book-hint"}}</p>
+</article>
+{{end}}

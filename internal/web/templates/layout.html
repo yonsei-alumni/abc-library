@@ -28,6 +28,7 @@
       <a href="/books" {{if eq .Nav "books"}}aria-current="page"{{end}}>책</a>
       <a href="/tags" {{if eq .Nav "tags"}}aria-current="page"{{end}}>태그</a>
       <a href="/authors" {{if eq .Nav "authors"}}aria-current="page"{{end}}>저자</a>
+      {{if .User}}<a href="/me" {{if eq .Nav "me"}}aria-current="page"{{end}}>내 북마크</a>{{else if .UserLogin}}<a href="/login?next={{.Path}}">로그인</a>{{end}}
       {{if .Admin}}<a href="/admin/tags" {{if eq .Nav "admin"}}aria-current="page"{{end}}>관리</a>{{end}}
     </nav>
   </div>
@@ -39,10 +40,11 @@
   <div class="wrap">
     아카라카북클럽(ABC) 밴드의 게시글과 댓글에 나온 책 이야기를 AI가 개인 정보를 빼고 요약했습니다.
     밴드 원문은 멤버만 볼 수 있습니다. 표지와 구매 링크는 교보문고를 따릅니다.
-    {{if .Admin}}
-    <form class="account" method="post" action="/logout"><span>{{.Admin}}</span> <button class="link-button">로그아웃</button></form>
-    {{else if .LoginEnabled}}
-    <p class="account"><a href="/login?next={{.Path}}" hx-boost="false">관리자 로그인</a></p>
+    {{if or .Admin .User}}
+    <form class="account" method="post" action="/logout">{{with .Admin}}<span>{{.}}</span>{{else}}<span>로그인함</span>{{end}} <button class="link-button">로그아웃</button></form>
+    {{end}}
+    {{if and .LoginEnabled (not .Admin)}}
+    <p class="account"><a href="/login?admin=1&amp;next={{.Path}}">관리자 로그인</a></p>
     {{end}}
   </div>
 </footer>

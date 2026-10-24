@@ -12,3 +12,15 @@
 {{define "admin-notice"}}{{with .Notice}}<p class="notice" role="status">{{.}}</p>{{end}}{{with .Error}}<p class="notice notice-error" role="alert">{{.}}</p>{{end}}{{end}}
 
 {{define "links"}}{{if .}}<ul class="links">{{range .}}<li><a href="{{.URL}}" target="_blank" rel="noopener nofollow">{{.Title}}</a></li>{{end}}</ul>{{end}}{{end}}
+
+{{define "category-card"}}
+<li class="card">
+  <a href="/books/{{.ID}}">
+    {{template "cover" .}}
+    <span class="card-title">{{.Title}}</span>
+    <span class="card-authors">{{authors .Authors}}</span>
+  </a>
+</li>
+{{end}}
+
+{{define "add-book-hint"}}이 사이트에 없는 새로운 책을 추가하고 싶다면 밴드에서 책에 대한 글을 써주세요. 1일 이내에 이 사이트에 책이 추가됩니다.{{end}}

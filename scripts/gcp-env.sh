@@ -35,6 +35,8 @@ CLAUDE_KEY_SECRET=claude-api-key
 # 관리자 로그인(Google OAuth 클라이언트 보안 비밀)과 세션 쿠키 서명에 쓰는 비밀. 웹 서버만 읽는다.
 GOOGLE_SECRET=google-client-secret
 SESSION_SECRET_NAME=session-secret
+# 사용자를 구별하려고 Google 계정 고유 번호(sub)를 HMAC-SHA256할 때 쓰는 키. 바꾸면 모든 사용자가 북마크를 잃는다.
+USER_ID_SECRET_NAME=user-id-secret
 # 배치 Job에서 band-state 비밀을 파일로 올리는 경로
 BAND_STATE_MOUNT=/secrets/band/band-state.json
 

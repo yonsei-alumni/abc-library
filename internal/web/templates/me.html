@@ -1,0 +1,54 @@
+{{define "content"}}
+<div class="admin me" hx-boost="false">
+<h1 class="page-title">내 북마크</h1>
+{{template "admin-notice" .}}
+
+<section class="admin-section">
+  <h2>카테고리 {{len .Categories}}개</h2>
+  {{if .Categories}}
+  <ul class="admin-list category-list">
+    {{range .Categories}}
+    <li>
+      <a class="category-title" href="/me/categories/{{.ID}}">{{.Title}}</a>
+      <span class="muted">책 {{.Books}}권</span>
+      {{if .Public}}<span class="badge">공개</span> <a class="share-link" href="/s/{{.Code}}">{{$.SiteURL}}/s/{{.Code}}</a>{{else}}<span class="badge badge-private">비공개</span>{{end}}
+    </li>
+    {{end}}
+  </ul>
+  {{end}}
+  <form class="admin-row" method="post" action="/me/categories">
+    <input name="title" required maxlength="100" placeholder="새 카테고리 제목" aria-label="새 카테고리 제목">
+    <button class="button">만들기</button>
+  </form>
+  <p class="hint">북마크 하나를 여러 카테고리에 넣을 수 있습니다. 카테고리는 {{.MaxCategories}}개까지 만들 수 있고, 하나씩 공개할 수 있습니다.</p>
+</section>
+
+<section class="admin-section">
+  <h2>북마크 {{len .Bookmarks}}권</h2>
+  {{if .Bookmarks}}
+  <ul class="shelf">
+    {{range .Bookmarks}}
+    <li class="card">
+      <a href="/books/{{.Book.ID}}">
+        {{template "cover" .Book}}
+        <span class="card-title">{{.Book.Title}}</span>
+        <span class="card-authors">{{authors .Book.Authors}}</span>
+        <span class="card-meta">{{if .Categories}}{{join .Categories ", "}}{{else}}카테고리 없음{{end}}</span>
+      </a>
+    </li>
+    {{end}}
+  </ul>
+  {{else}}
+  <p class="empty">책 화면에서 북마크하면 여기에 모입니다.</p>
+  {{end}}
+</section>
+
+<section class="admin-section">
+  <h2>계정</h2>
+  <p class="hint">메일 주소는 저장하지 않고, Google 계정 고유 번호를 단방향 암호화(HMAC-SHA256)한 값으로만 알아봅니다.</p>
+  <form method="post" action="/me/delete" onsubmit="return confirm('북마크와 카테고리를 모두 지우고 계정을 없앨까요? 되돌릴 수 없습니다.')">
+    <button class="button button-danger">계정 지우기</button>
+  </form>
+</section>
+</div>
+{{end}}

@@ -226,11 +226,12 @@ func (s *Store) SavePost(ctx context.Context, p book.Post, findings []book.Findi
 			}
 		}
 
-		// 수정된 글에서 빠져서 어느 언급에도 남지 않은 책은 지운다.
+		// 수정된 글에서 빠져서 어느 언급에도 남지 않은 책은 지운다. 누가 북마크한 책은 북마크를 잃지 않게 남긴다.
 		if len(oldBookIDs) > 0 {
 			_, err = tx.NewDelete().Model((*bookRow)(nil)).
 				Where("id IN (?)", bun.List(oldBookIDs)).
 				Where("NOT EXISTS (SELECT 1 FROM mentions m WHERE m.book_id = book_row.id)").
+				Where("NOT EXISTS (SELECT 1 FROM bookmarks k WHERE k.book_id = book_row.id)").
 				Exec(ctx)
 		}
 		return err

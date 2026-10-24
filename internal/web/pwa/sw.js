@@ -5,8 +5,8 @@ const PRECACHE = __PRECACHE__;
 const STATIC_CACHE = 'static-' + VERSION;
 const PAGE_CACHE = 'pages-' + VERSION;
 const MAX_PAGES = 50;
-// 관리 화면과 로그인 흐름은 서비스 워커가 건드리지 않는다.
-const BYPASS = ['/admin', '/login', '/logout', '/auth'];
+// 관리 화면, 내 북마크, 로그인 흐름은 서비스 워커가 건드리지 않는다.
+const BYPASS = ['/admin', '/me', '/login', '/logout', '/auth'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil((async () => {

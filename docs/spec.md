@@ -34,16 +34,29 @@
 - 태그 화면은 모임 주제를 정한 순서로 먼저 보여 주고, 그 밖의 태그를 책 수 순서로 보여 준다.
 - 저자 화면은 저자와 책 수를 보여 준다. 누르면 책 목록으로 거른다.
 
+### 로그인과 북마크
+
+- 누구나 Google 계정으로 로그인해서 관심 있는 책을 북마크한다. 위쪽 메뉴의 '로그인'을 누르면 Google로 넘어가기 전에 무엇을 저장하는지 알리는 화면(`/login`)을 먼저 보여 준다.
+- 사용자 로그인은 Google에 범위 `openid`만 요청하므로 메일 주소를 받지 않는다. 사용자는 Google 계정 고유 번호(sub)를 `USER_ID_SECRET`으로 HMAC-SHA256한 값(`users.subject_hash`)으로만 구별하고, 이름, 메일 주소, 프로필은 저장하지 않는다.
+  - sub는 Google이 계정마다 바꾸지 않고 다시 쓰지 않는 번호라서 메일 주소보다 식별자로 알맞다. 메일 주소는 바뀌거나 다른 사람에게 다시 배정될 수 있다.
+  - 메일 주소의 HMAC 값은 함께 저장하지 않는다. 쓸 데가 없고, 메일 주소는 짐작하기 쉬워서 키가 새면 맞춰 볼 수 있다.
+- 책 상세에서 북마크하고, 그 책을 넣을 내 카테고리를 여러 개 고른다. 북마크한 책은 제목 아래에 '북마크함'과 넣은 카테고리가 바로 보인다.
+- 내 북마크(`/me`)에서 카테고리를 만들고 북마크를 모아 본다. 카테고리는 사용자마다 100개까지 만든다. 계정을 지우면 북마크와 카테고리가 모두 지워진다.
+- 카테고리(`/me/categories/{id}`)에는 제목, 본문(여러 줄, Markdown), 공개용 제목, 공개 여부가 있다. 본문의 원시 HTML과 `javascript:` 같은 위험한 주소는 싣지 않는다(goldmark 기본값).
+- 공개한 카테고리는 짧은 주소 `/s/{code}`에서 누구나 공개용 제목(비었으면 제목), 본문, 책 목록을 한 화면에 본다. `code`는 임의로 뽑은 base62 8자라서 다른 카테고리의 주소를 짐작할 수 없다. 공개하지 않은 카테고리는 만든 사람에게만 보인다.
+- 공개 화면과 카테고리 편집 화면에는 '이 사이트에 없는 새로운 책을 추가하고 싶다면 밴드에서 책에 대한 글을 써주세요. 1일 이내에 이 사이트에 책이 추가됩니다.'라는 안내를 둔다.
+- 북마크한 책은 배치가 다시 추출해서 언급이 없어져도 지우지 않고, 관리자가 책을 합치면 합친 책으로 옮긴다. 관리자가 언급을 모두 지운 책은 북마크 목록에서 보이지 않는다.
+
 ### 앱 설치(PWA)
 
 - 휴대폰과 데스크톱 브라우저에서 앱으로 설치할 수 있다. 매니페스트는 `/manifest.webmanifest`, 서비스 워커는 `/sw.js`다(원본은 `internal/web/pwa/`).
 - 서비스 워커는 정적 파일을 캐시에서 먼저 꺼내고, 화면은 네트워크에서 먼저 받는다. 열어 본 화면(최근 50개)은 연결이 없을 때 캐시로 보여 주고, 처음 여는 화면은 오프라인 안내(`/offline`)를 보여 준다.
-- 관리 화면, 로그인 흐름, 로그인한 관리자에게 보인 화면(`Cache-Control: no-store`)은 캐시하지 않는다.
+- 관리 화면, 내 북마크, 로그인 흐름, 로그인한 사람에게 보인 화면(`Cache-Control: no-store`)은 캐시하지 않는다.
 - 정적 파일이나 서비스 워커가 바뀌면 `/sw.js`의 VERSION이 바뀌어서 브라우저가 새 워커를 설치하고 예전 캐시를 지운다.
 
 ### 관리
 
-관리자는 화면 아래쪽의 '관리자 로그인'으로 Google 계정에 로그인한다. 관리자 목록에 있는 계정만 들어갈 수 있고, 처음 관리자는 benelog@gmail.com이다. 로그인하면 위쪽 메뉴에 '관리'가 생기고 책 상세에 편집 링크가 붙는다.
+관리자는 화면 아래쪽의 '관리자 로그인'으로 Google 계정에 로그인한다. 관리자 로그인만 범위 `openid email`로 메일 주소를 받아서 관리자 목록과 맞춰 본다. 관리자 목록에 있는 계정만 들어갈 수 있고, 처음 관리자는 benelog@gmail.com이다. 로그인하면 위쪽 메뉴에 '관리'가 생기고 책 상세에 편집 링크가 붙는다. 관리자도 사용자로 함께 로그인해서 북마크를 쓴다.
 
 - 태그(`/admin/tags`): 태그를 더하고, 이름을 바꾸고, 순서를 옮기고, 지운다. 모임 주제는 맨 앞에, 갈래는 맨 뒤에 더한다. 이름을 바꾸거나 지우면 책에 붙은 태그도 함께 바뀐다.
 - 책(`/admin/books/{id}`): 제목, 저자, 출판사, ISBN, 교보문고 상품 번호, 태그를 고친다. 같은 책이 둘로 나뉘었으면 다른 책으로 합친다. 책이 아닌 것을 잘못 뽑았으면 언급을 모두 지워서 목록에서 뺀다.
@@ -95,6 +108,10 @@
 | `book_tags` | `book_id`, `tag` | 책 한 권에 태그 여러 개. 태그 이름을 바꾸거나 지우면 함께 바뀐다 |
 | `mentions` | `book_id`, `post_id`, `kind`(`post`/`comment`), `mentioned_at`, `summary`, `links`(JSON), `edited`, `hidden` | 책 상세의 언급 목록과 타임라인의 원천. `hidden`은 관리자가 지운 언급이다 |
 | `admins` | `email`(유일), `added_by` | 관리자의 Google 계정 메일 주소 |
+| `users` | `subject_hash`(유일) | 로그인한 사용자. Google 계정 고유 번호(sub)의 HMAC-SHA256 값만 둔다 |
+| `bookmarks` | `user_id`, `book_id` | 사용자가 북마크한 책 |
+| `bookmark_categories` | `user_id`, `title`, `body`(Markdown), `public_title`, `public`, `code`(유일) | 북마크를 묶는 카테고리. `code`는 공개 주소 `/s/{code}`다 |
+| `bookmark_category_books` | `category_id`, `user_id`, `book_id` | 카테고리에 넣은 북마크. 같은 사용자의 카테고리와 북마크만 잇는다 |
 | `batch_runs` | `started_at`, `finished_at`, `last_post_no`, `latest_post_no`, 처리 건수, `error` | 배치 실행 기록 |
 | `pending_posts` | `band_post_no`, `reason`(`failed`/`missing`), `attempts`, `last_error` | 다음 실행에서 다시 시도할 글 |
 
@@ -105,7 +122,7 @@
 | 웹 서버 | Cloud Run, `asia-southeast1`(싱가포르). 공개 주소는 Firebase Hosting의 https://abc-lib.web.app이고, 모든 요청을 Cloud Run으로 넘긴다 |
 | DB | Neon 프로젝트 `abc-library`, `aws-ap-southeast-1`(싱가포르), Postgres 18, DB 이름 `abc_library` |
 | 일일 배치 | Cloud Run Job, `asia-northeast3`(서울). 밴드 세션이 한국 IP에서 쓰이게 한다. Cloud Scheduler로 하루 한 번 실행한다 |
-| 비밀 값 | Secret Manager(`DB_PWD`, 밴드 `storageState`, Claude API 키, Google OAuth 클라이언트 보안 비밀, 세션 서명 값) |
+| 비밀 값 | Secret Manager(`DB_PWD`, 밴드 `storageState`, Claude API 키, Google OAuth 클라이언트 보안 비밀, 세션 서명 값, 사용자 구별 키) |
 | Claude 인증 | `CLAUDE_API_KEY`. 운영 배치는 Secret Manager의 `claude-api-key`. Workload Identity Federation은 코드만 준비되어 있다 |
 | 이미지 | Artifact Registry `abc-library` 저장소(웹은 `asia-southeast1`, 배치는 `asia-northeast3`). 최근 5개만 남긴다 |
 | 실행 일정 | Cloud Scheduler `abc-batch-daily`가 매일 03:00(KST)에 Job을 실행한다. Job이 실패하면 Cloud Monitoring이 메일을 보낸다 |
@@ -121,9 +138,10 @@
 | `BAND_NO` | 밴드 번호(기본 `102765569`) |
 | `BAND_STATE_PATH` | 밴드 로그인 세션 파일(기본 `band-state.json`) |
 | `PORT` | 웹 서버 포트(기본 `8080`) |
-| `GOOGLE_CLIENT_ID` | 관리자 로그인에 쓰는 Google OAuth 클라이언트 ID. 없으면 관리자 로그인을 쓰지 않는다 |
+| `GOOGLE_CLIENT_ID` | 로그인에 쓰는 Google OAuth 클라이언트 ID. 없으면 로그인을 쓰지 않는다 |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth 클라이언트 보안 비밀 |
-| `SESSION_SECRET` | 세션 쿠키 서명 값(32바이트 이상). 바꾸면 모든 관리자가 로그아웃된다 |
+| `SESSION_SECRET` | 세션 쿠키 서명 값(32바이트 이상). 바꾸면 모든 사람이 로그아웃된다 |
+| `USER_ID_SECRET` | Google 계정 고유 번호를 HMAC-SHA256할 키(32바이트 이상). 없으면 관리자 로그인만 쓰고 북마크는 쓰지 않는다. 바꾸면 모든 사용자가 새 사용자가 되어 북마크를 잃으므로 바꾸지 않는다 |
 | `SITE_URL` | 사이트 공개 주소(기본 `http://localhost:{PORT}`). 로그인 리디렉션 URI와 POST 요청의 출처 확인에 쓴다 |
 
 ## 배포
@@ -134,7 +152,7 @@ Google Cloud 프로젝트 `abc-library-512606`(이름 abc-library)에 배포한�
 |---|---|
 | 웹 서버 | Cloud Run 서비스 `abc-library`, 서비스 계정 `abc-web`, 최소 인스턴스 0, 공개 접근 |
 | 일일 배치 | Cloud Run Job `abc-batch`, 서비스 계정 `abc-batch`, 2 vCPU, 2GiB, 제한 시간 1시간, 재시도 없음 |
-| 비밀 값 | `db-pwd`(웹, 배치), `band-state`(배치, `/secrets/band/band-state.json`에 파일로 올림), `claude-api-key`(배치), `google-client-secret`, `session-secret`(웹) |
+| 비밀 값 | `db-pwd`(웹, 배치), `band-state`(배치, `/secrets/band/band-state.json`에 파일로 올림), `claude-api-key`(배치), `google-client-secret`, `session-secret`, `user-id-secret`(웹) |
 | 실행 계정 | `abc-scheduler`(Job 실행), `abc-deployer`(GitHub Actions 배포) |
 
 처음 한 번은 `.envrc`를 읽은 셸에서 다음 순서로 실행한다. 모두 다시 실행해도 된다.
@@ -156,16 +174,16 @@ make firebase-hosting           # https://abc-lib.web.app을 웹 서비스에 �
 - 웹 서버는 `robots.txt`와 `X-Robots-Tag: noindex`로 검색엔진 수집을 막는다.
 - 웹 서버는 마이그레이션을 적용하지 않는다. 스키마를 바꾼 코드를 push하기 전에 `make migrate`로 운영 DB에 먼저 적용한다. 그렇지 않으면 배포된 웹 서버가 다음 배치 실행까지 오류를 낸다.
 
-### 관리자 로그인 설정
+### 로그인 설정
 
 Google OAuth 클라이언트는 콘솔에서 사람이 한 번 만든다.
 
 1. Google Cloud 콘솔의 **Google 인증 플랫폼**에서 `abc-library-512606` 프로젝트를 고른다.
 2. **브랜딩**: 앱 이름(ABC 도서관), 사용자 지원 이메일, 승인된 도메인 `web.app`을 넣는다.
-3. **대상**: 사용자 유형을 외부로 두고 앱을 게시한다(범위가 `openid`, `email`뿐이라 검증이 필요 없다).
+3. **대상**: 사용자 유형을 외부로 두고 앱을 게시한다(범위가 `openid`, `email`뿐이라 검증이 필요 없다). 사용자 로그인은 `openid`만, 관리자 로그인은 `openid email`을 요청한다.
 4. **클라이언트**: 웹 애플리케이션 클라이언트를 만들고, 승인된 리디렉션 URI에 `https://abc-lib.web.app/auth/callback`(로컬에서도 쓰려면 `http://localhost:8080/auth/callback`)을 넣는다.
 5. 나온 클라이언트 ID를 `scripts/gcp-env.sh`의 `GOOGLE_CLIENT_ID`에 넣는다.
-6. `GOOGLE_CLIENT_SECRET=<보안 비밀> make gcp-setup`으로 `google-client-secret`과 `session-secret` 비밀을 만들고 `make deploy-web`을 실행한다.
+6. `GOOGLE_CLIENT_SECRET=<보안 비밀> make gcp-setup`으로 `google-client-secret`, `session-secret`, `user-id-secret` 비밀을 만들고 `make deploy-web`을 실행한다. 이미 있는 비밀은 새 버전을 올리지 않는다.
 
-그 뒤 GitHub Actions 배포도 같은 값을 쓴다. `GOOGLE_CLIENT_ID`를 비우고 배포하면 관리자 로그인 없이 뜬다.
+그 뒤 GitHub Actions 배포도 같은 값을 쓴다. `GOOGLE_CLIENT_ID`를 비우고 배포하면 로그인 없이 뜬다. `scripts/deploy.sh`는 `user-id-secret`을 연결하므로, 이 비밀이 없는 프로젝트에 배포하기 전에 `make gcp-setup`을 먼저 실행한다.
 - Cloud Run 앞단의 Google Frontend가 정확히 `/healthz`를 가로채므로 상태 확인은 `/health`로 한다.

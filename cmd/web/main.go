@@ -43,8 +43,11 @@ func run(log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	if cfg.Login == nil {
-		log.Info("GOOGLE_CLIENT_ID가 없어서 관리자 로그인을 쓰지 않는다")
+	switch {
+	case cfg.Login == nil:
+		log.Info("GOOGLE_CLIENT_ID가 없어서 로그인을 쓰지 않는다")
+	case cfg.Subjects == nil:
+		log.Info("USER_ID_SECRET이 없어서 관리자 로그인만 쓰고 북마크는 쓰지 않는다")
 	}
 	srv, err := web.New(st, cfg, log)
 	if err != nil {
@@ -73,7 +76,8 @@ func run(log *slog.Logger) error {
 	return nil
 }
 
-// webConfig는 환경 변수로 웹 서버 설정을 만든다. GOOGLE_CLIENT_ID가 없으면 관리자 로그인을 쓰지 않는다.
+// webConfig는 환경 변수로 웹 서버 설정을 만든다. GOOGLE_CLIENT_ID가 없으면 로그인을 쓰지 않고,
+// USER_ID_SECRET이 없으면 관리자 로그인만 쓴다.
 func webConfig(port string) (web.Config, error) {
 	siteURL := strings.TrimRight(config.Get("SITE_URL", "http://localhost:"+port), "/")
 	cfg := web.Config{BandNo: config.Get("BAND_NO", "102765569"), SiteURL: siteURL}
@@ -91,5 +95,12 @@ func webConfig(port string) (web.Config, error) {
 	}
 	cfg.Sessions = sessions
 	cfg.Login = &auth.Google{ClientID: clientID, ClientSecret: secret, RedirectURL: siteURL + "/auth/callback"}
+	if userSecret := os.Getenv("USER_ID_SECRET"); userSecret != "" {
+		subjects, err := auth.NewSubjects(userSecret)
+		if err != nil {
+			return cfg, fmt.Errorf("USER_ID_SECRET: %w", err)
+		}
+		cfg.Subjects = subjects
+	}
 	return cfg, nil
 }

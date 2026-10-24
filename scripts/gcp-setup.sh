@@ -89,6 +89,12 @@ if [[ -n "$GOOGLE_CLIENT_ID" ]]; then
     openssl rand -base64 48 | tr -d '\n' | gcloud secrets versions add "$SESSION_SECRET_NAME" --project "$PROJECT" --data-file=- >/dev/null
     echo "  $SESSION_SECRET_NAME: 임의의 값으로 첫 버전을 올렸습니다"
   fi
+  create_secret "$USER_ID_SECRET_NAME"
+  if ! has_version "$USER_ID_SECRET_NAME"; then
+    # 값을 바꾸면 모든 사용자가 새 사용자가 되어 북마크를 잃는다. 새 버전을 올리지 않는다.
+    openssl rand -base64 48 | tr -d '\n' | gcloud secrets versions add "$USER_ID_SECRET_NAME" --project "$PROJECT" --data-file=- >/dev/null
+    echo "  $USER_ID_SECRET_NAME: 임의의 값으로 첫 버전을 올렸습니다"
+  fi
 fi
 
 grant_secret() {
@@ -103,6 +109,7 @@ grant_secret "$CLAUDE_KEY_SECRET" "$BATCH_SA"
 if [[ -n "$GOOGLE_CLIENT_ID" ]]; then
   grant_secret "$GOOGLE_SECRET" "$WEB_SA"
   grant_secret "$SESSION_SECRET_NAME" "$WEB_SA"
+  grant_secret "$USER_ID_SECRET_NAME" "$WEB_SA"
 fi
 
 echo "== GitHub Actions 배포 권한 =="

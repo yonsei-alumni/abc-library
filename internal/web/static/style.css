@@ -179,6 +179,39 @@ main.wrap { padding-top: 28px; padding-bottom: 48px; min-height: 60vh; }
 .admin-list li { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 16px; }
 .admin-list .summary { margin-bottom: 0; }
 
+/* 북마크 */
+.my-categories { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: -6px 0 18px; font-size: .85rem; }
+.bookmark-mark { font-weight: 600; color: var(--accent); text-decoration: none; }
+.bookmark-mark::before { content: "★ "; }
+.my-category { text-decoration: none; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--accent); color: var(--accent); }
+.my-category:hover { background: var(--accent-soft); }
+.bookmark-panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 18px; margin: -12px 0 32px; scroll-margin-top: 16px; }
+.bookmark-panel h2 { font-size: 1rem; margin: 0 0 10px; }
+.category-options { border: 0; padding: 0; margin: 0 0 12px; display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.category-options legend { font-size: .85rem; color: var(--muted); padding: 0; margin-bottom: 6px; }
+.category-options label.check { display: inline-flex; align-items: center; gap: 4px; }
+.bookmark-login { margin: -12px 0 32px; font-size: .9rem; }
+.bookmark-login a { color: var(--accent); }
+.badge-private { background: var(--line); color: var(--muted); }
+.category-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.category-title { font-weight: 650; color: var(--ink); }
+.share-link { color: var(--accent); word-break: break-all; }
+.privacy ul { margin: 0; padding-left: 1.2em; line-height: 1.6; }
+.privacy li + li { margin-top: 6px; }
+.login form { margin: 0 0 12px; }
+.markdown { line-height: 1.7; overflow-wrap: anywhere; }
+.markdown > :first-child { margin-top: 0; }
+.markdown h1, .markdown h2, .markdown h3 { font-size: 1.15rem; margin: 1.2em 0 .4em; }
+.markdown a { color: var(--accent); }
+.markdown img { max-width: 100%; }
+.markdown pre { overflow-x: auto; padding: 10px 12px; border-radius: 6px; background: var(--card); border: 1px solid var(--line); }
+.markdown blockquote { margin: 0; padding-left: 14px; border-left: 3px solid var(--line); color: var(--muted); }
+.markdown table { border-collapse: collapse; }
+.markdown th, .markdown td { border: 1px solid var(--line); padding: 4px 8px; }
+.shared .markdown { margin-bottom: 28px; }
+.shared-books h2 { font-size: 1.1rem; margin: 0 0 14px; }
+.add-book-hint { margin-top: 32px; }
+
 @media (max-width: 600px) {
   .entry { grid-template-columns: 1fr; gap: 6px; }
   .book-head { grid-template-columns: 120px 1fr; gap: 16px; }
