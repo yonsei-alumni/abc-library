@@ -160,6 +160,29 @@ func TestRunRedoFromReextractsSavedPosts(t *testing.T) {
 	}
 }
 
+func TestRunRedoPostsReextractsOnlyThosePosts(t *testing.T) {
+	p1, p2, p3 := post(1, "a"), post(2, "b"), post(3, "c")
+	src := &fakeSource{latest: 3, posts: map[int]band.Post{1: p1, 2: p2, 3: p3}}
+	st := &fakeStore{
+		last:   3,
+		hashes: map[int]string{1: ContentHash(p1), 2: ContentHash(p2), 3: ContentHash(p3)},
+		saved:  map[int][]book.Finding{},
+	}
+	ex := &fakeExtractor{}
+
+	// 0과 9는 저장된 글 범위 밖이라 무시하고, 3은 두 번 줘도 한 번만 연다.
+	r, err := Run(context.Background(), src, ex, st, Options{RedoPosts: []int{3, 1, 3, 0, 9}}, quiet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Extracted != 2 || ex.calls != 2 {
+		t.Errorf("report = %+v, 추출 %d번", r, ex.calls)
+	}
+	if got := src.opened; len(got) != 2 || got[0] != 3 || got[1] != 1 {
+		t.Errorf("열어 본 글 = %v, want [3 1]", got)
+	}
+}
+
 func TestRunRecordsRunsAndRetriesFailedPosts(t *testing.T) {
 	src := &fakeSource{latest: 4, posts: map[int]band.Post{1: post(1, "a"), 2: post(2, "실패할 글"), 4: post(4, "d")}}
 	st := &fakeStore{hashes: map[int]string{}, saved: map[int][]book.Finding{}}

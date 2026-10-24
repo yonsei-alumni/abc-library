@@ -13,6 +13,8 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -52,7 +54,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "사용법: batch <migrate|login|run|status> [-limit N] [-recheck-days N] [-redo-from N]")
+	fmt.Fprintln(os.Stderr, "사용법: batch <migrate|login|run|status> [-limit N] [-recheck-days N] [-redo-from N] [-redo-posts N,N]")
 	os.Exit(2)
 }
 
@@ -104,7 +106,19 @@ func run(ctx context.Context, log *slog.Logger, args []string) error {
 	limit := fs.Int("limit", 30, "한 번에 Claude로 추출할 게시글 수의 상한(0이면 제한 없음)")
 	recheckDays := fs.Int("recheck-days", 7, "수정된 본문과 새 댓글을 다시 확인할 최근 게시글의 기간(일)")
 	redoFrom := fs.Int("redo-from", 0, "이 번호부터는 이미 저장한 글도 다시 추출한다(프롬프트를 바꾼 뒤에 쓴다)")
+	redoPosts := fs.String("redo-posts", "", "이미 저장했어도 다시 추출할 글 번호를 쉼표로 나열한다(예: 175,184)")
 	_ = fs.Parse(args)
+	var redoList []int
+	for _, s := range strings.Split(*redoPosts, ",") {
+		if s = strings.TrimSpace(s); s == "" {
+			continue
+		}
+		no, err := strconv.Atoi(s)
+		if err != nil || no < 1 {
+			return fmt.Errorf("-redo-posts의 글 번호가 잘못되었습니다: %q", s)
+		}
+		redoList = append(redoList, no)
+	}
 
 	st, err := openStore(ctx, log)
 	if err != nil {
@@ -126,7 +140,7 @@ func run(ctx context.Context, log *slog.Logger, args []string) error {
 	defer func() { _ = crawler.Close() }()
 
 	ex := extract.New(&client.Beta.Messages, kyobo.NewClient())
-	_, err = pipeline.Run(ctx, crawler, ex, st, pipeline.Options{Limit: *limit, RecheckDays: *recheckDays, RedoFrom: *redoFrom}, log)
+	_, err = pipeline.Run(ctx, crawler, ex, st, pipeline.Options{Limit: *limit, RecheckDays: *recheckDays, RedoFrom: *redoFrom, RedoPosts: redoList}, log)
 	return err
 }
 

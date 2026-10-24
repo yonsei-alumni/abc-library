@@ -27,7 +27,7 @@ migrate:
 band-login:
 	go run ./cmd/batch login
 
-# 예: make batch ARGS="-limit 0 -redo-from 1"
+# 예: make batch ARGS="-limit 0 -redo-from 1", make batch ARGS="-recheck-days 0 -redo-posts 175,184"
 batch:
 	go run ./cmd/batch run $(ARGS)
 

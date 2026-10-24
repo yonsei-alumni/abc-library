@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"github.com/yonsei-alumni/abc-library/internal/band"
@@ -51,11 +52,13 @@ type Options struct {
 	RecheckDays int
 	// RedoFrom이 0보다 크면 이 번호부터는 이미 저장한 글도 내용이 같든 다르든 다시 추출한다. 프롬프트를 바꾼 뒤에 쓴다.
 	RedoFrom int
-	Now      func() time.Time
+	// RedoPosts의 글은 이미 저장했어도 내용이 같든 다르든 다시 추출한다. 몇 개 글만 고칠 때 쓴다.
+	RedoPosts []int
+	Now       func() time.Time
 }
 
 func (o Options) redo(no int) bool {
-	return o.RedoFrom > 0 && no >= o.RedoFrom
+	return (o.RedoFrom > 0 && no >= o.RedoFrom) || slices.Contains(o.RedoPosts, no)
 }
 
 // Report는 배치 한 번의 결과다.
@@ -118,6 +121,11 @@ func process(ctx context.Context, src Source, ex Extractor, st Store, opts Optio
 	}
 	for no := opts.RedoFrom; opts.RedoFrom > 0 && no <= r.LastPostNo; no++ {
 		add(no)
+	}
+	for _, no := range opts.RedoPosts {
+		if no > 0 && no <= r.LastPostNo {
+			add(no)
+		}
 	}
 	for _, no := range pending {
 		add(no)
