@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{{.Title}} · ABC 서재</title>
+<title>{{.Title}} · ABC 도서관</title>
 <meta name="description" content="아카라카북클럽(ABC)에서 함께 읽고 추천한 책">
 <link rel="stylesheet" href="{{static "style.css"}}">
 <script src="{{static "htmx.min.js"}}" defer></script>
@@ -11,7 +11,7 @@
 <body hx-boost="true">
 <header class="site-header">
   <div class="wrap">
-    <a class="brand" href="/"><span class="brand-mark">ABC</span> 서재</a>
+    <a class="brand" href="/"><span class="brand-mark">ABC</span> 도서관</a>
     <form class="search" action="/books" method="get" role="search">
       <input type="search" name="q" value="{{with .Query}}{{.}}{{end}}" placeholder="제목, 저자, 태그 검색" aria-label="책 검색" autocomplete="off"
         hx-get="/books" hx-trigger="input changed delay:400ms, search" hx-target="#content" hx-select="#content" hx-swap="outerHTML" hx-push-url="true">

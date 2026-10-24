@@ -110,7 +110,7 @@ func TestTimelinePagesWithHTMX(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("code = %d", code)
 	}
-	assertContains(t, body, "<title>최근 소식 · ABC 서재</title>", "새 책", "이야기 추가", "/books/1",
+	assertContains(t, body, "<title>최근 소식 · ABC 도서관</title>", "새 책", "이야기 추가", "/books/1",
 		"https://contents.kyobobook.co.kr/sih/fit-in/240x0/pdt/9791196914806.jpg", `hx-get="/?page=2"`, "2026년 10월 21일")
 
 	code, body = get(t, st, "/?page=2", "HX-Request", "true", "HX-Target", "timeline-more")

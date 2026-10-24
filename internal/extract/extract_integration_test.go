@@ -86,3 +86,61 @@ func TestExtractWithClaude(t *testing.T) {
 		t.Errorf("댓글 언급과 그 댓글의 링크가 있어야 한다: %+v", breath.Mentions)
 	}
 }
+
+// 여러 권으로 된 책은 한 권만 넣고, 그 책과 직접 관련 없는 링크는 빼는지 본다.
+func TestExtractSeriesAndUnrelatedLinksWithClaude(t *testing.T) {
+	client, err := NewClient()
+	if err != nil {
+		t.Skip(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	posted := time.Now().Add(-24 * time.Hour)
+	in := Input{
+		PostedAt: posted,
+		Text: `#독서_인증
+넬레 노이하우스의 신작 '몬스터' 1, 2권을 주말에 다 읽었어요. 호프하임 경찰서 시리즈답게 결말이 궁금해서 손을 놓을 수 없었습니다.
+자세한 감상은 블로그에 적었어요. 이번 모임 장소 지도와 요즘 화제인 AI 기사도 같이 올립니다.`,
+		Links: []book.Link{
+			{URL: "https://blog.example.com/monster-review", Title: "넬레 노이하우스 '몬스터' 읽고 - 독서 일기"},
+			{URL: "https://naver.me/map-example", Title: "네이버지도"},
+			{URL: "https://news.example.com/gpu", Title: "젠슨 황 \"새 GPU로 AI 시대 연다\""},
+		},
+		Comments: []Comment{
+			{At: posted.Add(time.Hour), Text: "닐 셔스터먼의 수확자 시리즈도 추천해요. 죽음이 사라진 미래 이야기예요."},
+		},
+	}
+	got, err := New(&client.Beta.Messages, kyobo.NewClient()).Extract(ctx, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var monsters, reapers []book.Finding
+	for _, f := range got {
+		t.Logf("책: %+v", f.Book)
+		for _, m := range f.Mentions {
+			t.Logf("  [%s] 링크: %+v", m.Kind, m.Links)
+		}
+		if strings.Contains(f.Book.Title, "세트") || strings.Contains(f.Book.Title, "전") && strings.Contains(f.Book.Title, "권") {
+			t.Errorf("세트 상품을 고르면 안 된다: %+v", f.Book)
+		}
+		switch {
+		case strings.Contains(f.Book.Title, "몬스터"):
+			monsters = append(monsters, f)
+		case strings.Contains(f.Book.Title, "수확자"):
+			reapers = append(reapers, f)
+		}
+	}
+	if len(monsters) != 1 {
+		t.Fatalf("언급 하나가 1, 2권을 함께 다루면 한 권만 넣어야 한다: %d권", len(monsters))
+	}
+	if title := monsters[0].Book.Title; strings.Contains(title, "2") {
+		t.Errorf("여러 권을 함께 다루면 앞선 권을 골라야 한다: %s", title)
+	}
+	if links := monsters[0].Mentions[0].Links; len(links) != 1 || !strings.Contains(links[0].URL, "monster-review") {
+		t.Errorf("그 책의 감상 링크만 남고 지도와 다른 주제 기사는 빠져야 한다: %+v", links)
+	}
+	if len(reapers) != 1 {
+		t.Errorf("댓글에서 소개한 시리즈를 한 권으로 넣어야 한다: %d권", len(reapers))
+	}
+}

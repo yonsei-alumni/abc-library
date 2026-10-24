@@ -1,6 +1,6 @@
 // Package extract는 Claude로 밴드 게시글과 댓글에서 책을 찾고, 개인 정보를 뺀 언급 요약을 만든다.
 // Claude가 교보문고 검색 도구로 ISBN을 고르고, 코드는 검색 결과에 실제로 있었던 ISBN만 받아들인다.
-// 언급에 들어 있던 링크는 서점 구매 링크만 빼고 코드가 모두 붙인다.
+// 언급에 들어 있던 링크는 서점 구매 링크와 Claude가 그 책과 직접 관련이 없다고 판정한 링크만 빼고 코드가 모두 붙인다.
 package extract
 
 import (
@@ -94,6 +94,7 @@ type result struct {
 			Comment int    `json:"comment"`
 			Summary string `json:"summary"`
 		} `json:"comments"`
+		UnrelatedLinks []int `json:"unrelated_links"`
 	} `json:"books"`
 }
 
@@ -177,12 +178,21 @@ func userContent(in Input) []anthropic.BetaContentBlockParamUnion {
 	}
 	for i, c := range in.Comments {
 		fmt.Fprintf(&b, "[%d] (%s) %s\n", i+1, c.At.Format("2006-01-02"), strings.TrimSpace(c.Text))
-		for _, l := range c.Links {
-			fmt.Fprintf(&b, "    링크: %s %s\n", l.Title, l.URL)
+		for j, l := range c.Links {
+			fmt.Fprintf(&b, "    링크 [%d] %s %s\n", commentLinkNo(in, i, j), l.Title, l.URL)
 		}
 	}
 	fmt.Fprintf(&b, "\n## 사진\n첨부 사진 %d장을 함께 보냈다.\n", len(in.Images))
 	return append(blocks, anthropic.NewBetaTextBlock(b.String()))
+}
+
+// commentLinkNo는 i번째 댓글(0부터)의 j번째 링크(0부터)에 붙이는 번호다. 본문 링크 번호 다음부터 이어진다.
+func commentLinkNo(in Input, i, j int) int {
+	no := len(in.Links)
+	for _, c := range in.Comments[:i] {
+		no += len(c.Links)
+	}
+	return no + j + 1
 }
 
 func (e *Extractor) runSearch(ctx context.Context, use anthropic.BetaToolUseBlock, seen map[string]kyobo.Edition) anthropic.BetaContentBlockParamUnion {
@@ -247,6 +257,10 @@ func parseResult(resp *anthropic.BetaMessage, in Input, seen map[string]kyobo.Ed
 	var findings []book.Finding
 	for _, c := range candidates {
 		b, rb := c.book, r.Books[c.raw]
+		unrelated := map[int]bool{}
+		for _, no := range rb.UnrelatedLinks {
+			unrelated[no] = true
+		}
 		var mentions []book.Mention
 		if summary := strings.TrimSpace(rb.Post.Summary); summary != "" {
 			ids := rb.Post.Links
@@ -257,6 +271,7 @@ func parseResult(resp *anthropic.BetaMessage, in Input, seen map[string]kyobo.Ed
 					ids = append(ids, i+1)
 				}
 			}
+			ids = slices.DeleteFunc(ids, func(id int) bool { return unrelated[id] })
 			mentions = append(mentions, book.Mention{Kind: book.InPost, At: in.PostedAt, Summary: summary, Links: pickLinks(in.Links, ids)})
 		}
 		used := map[int]bool{}
@@ -267,7 +282,13 @@ func parseResult(resp *anthropic.BetaMessage, in Input, seen map[string]kyobo.Ed
 			}
 			used[rc.Comment] = true
 			c := in.Comments[rc.Comment-1]
-			mentions = append(mentions, book.Mention{Kind: book.InComment, At: c.At, Summary: summary, Links: pickLinks(c.Links, all(len(c.Links)))})
+			var ids []int
+			for j := range c.Links {
+				if !unrelated[commentLinkNo(in, rc.Comment-1, j)] {
+					ids = append(ids, j+1)
+				}
+			}
+			mentions = append(mentions, book.Mention{Kind: book.InComment, At: c.At, Summary: summary, Links: pickLinks(c.Links, ids)})
 		}
 		if len(mentions) == 0 {
 			continue
@@ -275,14 +296,6 @@ func parseResult(resp *anthropic.BetaMessage, in Input, seen map[string]kyobo.Ed
 		findings = append(findings, book.Finding{Book: b, Mentions: mentions})
 	}
 	return findings, nil
-}
-
-func all(n int) []int {
-	ids := make([]int, n)
-	for i := range ids {
-		ids[i] = i + 1
-	}
-	return ids
 }
 
 // pickLinks는 1부터 시작하는 번호로 링크를 고른다. 서점 구매 링크와 잘못된 번호는 뺀다.

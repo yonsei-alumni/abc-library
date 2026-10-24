@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -64,7 +65,7 @@ func found(title, isbn string, tags []string, postSummary string, postLinks []in
 		postLinks = []int{}
 	}
 	return m{"title": title, "authors": []string{"테드 창"}, "isbn13": isbn, "tags": tags,
-		"post": m{"summary": postSummary, "links": postLinks}, "comments": comments}
+		"post": m{"summary": postSummary, "links": postLinks}, "comments": comments, "unrelated_links": []int{}}
 }
 
 var (
@@ -164,6 +165,43 @@ func TestExtractUsesChosenLinksWhenPostCoversSeveralBooks(t *testing.T) {
 	}
 }
 
+func TestExtractDropsUnrelatedLinks(t *testing.T) {
+	in := input
+	in.Comments = append(slices.Clone(input.Comments), Comment{At: commentedAt, Text: "숨 리뷰와 모임 장소예요", Links: []book.Link{
+		{URL: "https://blog.example.com/breath", Title: "숨 리뷰"},
+		{URL: "https://naver.me/map", Title: "네이버지도"},
+	}})
+	// 링크 번호: 본문 1~3, 1번 댓글 4~5, 3번 댓글 6~7
+	story := found("당신 인생의 이야기", "", []string{"SF"}, "요약", nil)
+	story["unrelated_links"] = []int{2, 0, 99}
+	breath := found("숨", "", []string{"SF"}, "", nil, m{"comment": 1, "summary": "추천"}, m{"comment": 3, "summary": "리뷰 공유"})
+	breath["unrelated_links"] = []int{4, 7}
+	api := &fakeAPI{responses: []string{message("end_turn", textBlock(m{"books": []m{story, breath}}))}}
+
+	got, err := New(api, &fakeSearch{}).Extract(context.Background(), in)
+	if err != nil || len(got) != 2 {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+	// 본문이 한 권만 다뤄서 본문 링크를 모두 붙이지만, 관련 없다고 판정한 2번은 뺀다. 없는 번호는 무시한다.
+	if l := got[0].Mentions[0].Links; len(l) != 1 || l[0].URL != "https://blog.example.com/review" {
+		t.Errorf("본문 링크 = %+v", l)
+	}
+	// 1번 댓글의 4번(유튜브)은 관련 없고 5번은 서점 링크라서 남는 링크가 없다.
+	if l := got[1].Mentions[0].Links; len(l) != 0 {
+		t.Errorf("1번 댓글 링크 = %+v", l)
+	}
+	// 3번 댓글은 7번(지도)만 빠진다.
+	if l := got[1].Mentions[1].Links; len(l) != 1 || l[0].URL != "https://blog.example.com/breath" {
+		t.Errorf("3번 댓글 링크 = %+v", l)
+	}
+	req, _ := json.Marshal(api.calls[0])
+	for _, want := range []string{"링크 [6] 숨 리뷰", "링크 [7] 네이버지도"} {
+		if !strings.Contains(string(req), want) {
+			t.Errorf("요청에 %s가 없다", want)
+		}
+	}
+}
+
 func TestExtractRequest(t *testing.T) {
 	api := &fakeAPI{responses: []string{message("end_turn", textBlock(m{"books": []any{}}))}}
 	got, err := New(api, &fakeSearch{}).Extract(context.Background(), input)
@@ -179,7 +217,7 @@ func TestExtractRequest(t *testing.T) {
 		`"model":"claude-opus-5-5"`, `"effort":"medium"`, `"type":"json_schema"`, `"fallbacks":"default"`,
 		`"name":"search_kyobo"`, `"strict":true`, `"media_type":"image/jpeg"`, `게시일: 2026-10-21`,
 		`[3] 리뷰 https://blog.example.com/review`, `[1] (2026-10-21) 같은 작가의 '숨'도 좋아요`,
-		`링크:  https://www.youtube.com/watch?v=abc`, `[2] (2026-10-21) 다음 모임 언제예요?`, `"enum":["AI","SF","과학"`,
+		`링크 [4]  https://www.youtube.com/watch?v=abc`, `링크 [5] 알라딘 https://www.aladin.co.kr`, `[2] (2026-10-21) 다음 모임 언제예요?`, `"enum":["AI","SF","과학"`,
 	} {
 		if !strings.Contains(req, want) {
 			t.Errorf("요청에 %s가 없다", want)

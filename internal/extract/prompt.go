@@ -15,6 +15,11 @@ var systemPrompt = `너는 연세대 동문 독서 모임 '아카라카북클럽
 - 본문, 링크 제목, 첨부 사진(책 표지, 책장 사진 등), 댓글을 모두 근거로 쓴다.
 - 다룬 책이 없으면 books를 빈 배열로 둔다.
 
+## 여러 권으로 된 책
+- 시리즈나 상·하권처럼 여러 권으로 나온 책은 한 언급(본문이나 댓글 하나)에서 책 하나로 넣는다. 그 언급이 여러 권을 함께 다뤄도 권마다 따로 넣지 않는다.
+- 언급이 특정 권을 가리키면 그 권을 고른다. 여러 권을 함께 다루면 그중 가장 앞선 권을, 특정 권을 가리키지 않으면 1권을 고른다.
+- 교보문고의 세트 상품(제목에 '세트', '전 N권', '1~3권' 등이 붙은 것)은 세트 ISBN이 따로 있지만 고르지 않는다. 세트가 아니라 낱권을 고른다.
+
 ## ISBN
 - 책마다 search_kyobo 도구로 교보문고를 검색해서 ISBN-13을 확인한다. 검색어는 제목과 저자로 만들고, 결과가 없으면 제목만으로 다시 검색한다.
 - isbn13에는 검색 결과에 나온 값만 그대로 넣는다. 게시글의 책과 같은 책인지 확신할 수 없으면 빈 문자열로 둔다.
@@ -39,8 +44,13 @@ var systemPrompt = `너는 연세대 동문 독서 모임 '아카라카북클럽
 - 책의 내용, 인상적인 점, 추천하는 이유를 중심으로 쓴다. 글에 없는 내용을 지어내지 않는다.
 
 ## 링크
+- 링크에는 번호가 붙어 있다. 본문 링크가 먼저 오고, 댓글 링크는 그 다음 번호로 이어진다.
 - post.links에는 본문 링크 목록에서 그 책을 다룬 부분에 들어 있는 링크의 번호를 빠짐없이 넣는다.
-- 댓글의 링크는 코드가 그 댓글의 요약에 붙이므로 따로 고르지 않는다.
+- 본문이 그 책만 다뤘으면 본문 링크를 모두, 댓글 링크는 그 댓글을 넣은 책에 코드가 붙인다.
+- unrelated_links에는 그 책의 언급(본문과 댓글)에 들어 있지만 그 책과 직접 관련이 없는 링크의 번호를 넣는다. 코드는 이 링크만 빼고 붙인다.
+  - 관련 있는 링크: 그 책의 서평과 감상(회원의 블로그나 SNS 포함), 책 소개 기사, 출판사의 책 소개, 저자 인터뷰나 강연, 그 책을 원작으로 한 영화나 드라마
+  - 관련 없는 링크: 지도, 모임이나 행사 안내와 신청, 그 책을 다루지 않은 뉴스와 글(주제가 비슷해도 그 책 이야기가 아니면 뺀다), 다른 책의 링크
+  - 링크 제목이 없으면 링크 주소와 앞뒤 문맥으로 판단한다. 그래도 알 수 없으면 관련 있는 링크로 본다.
 
 ## 태그
 - tags는 목록에서 그 책에 맞는 것을 1~5개 고른다.
@@ -57,7 +67,7 @@ func resultSchema() map[string]any {
 	return object([]string{"books"}, map[string]any{
 		"books": map[string]any{
 			"type": "array",
-			"items": object([]string{"title", "authors", "isbn13", "tags", "post", "comments"}, map[string]any{
+			"items": object([]string{"title", "authors", "isbn13", "tags", "post", "comments", "unrelated_links"}, map[string]any{
 				"title":   str,
 				"authors": map[string]any{"type": "array", "items": str},
 				"isbn13": map[string]any{
@@ -81,6 +91,11 @@ func resultSchema() map[string]any {
 						"comment": map[string]any{"type": "integer", "description": "댓글 번호"},
 						"summary": map[string]any{"type": "string", "description": "그 댓글이 이 책에 대해 한 이야기. 개인 정보를 뺀다"},
 					}),
+				},
+				"unrelated_links": map[string]any{
+					"type":        "array",
+					"items":       map[string]any{"type": "integer"},
+					"description": "이 책의 언급에 들어 있지만 이 책과 직접 관련이 없는 링크 번호",
 				},
 			}),
 		},
