@@ -16,8 +16,8 @@
 
 ## 관리자 기능
 
-- [ ] 운영 DB에 `20261024000003_admin` 마이그레이션을 적용한다(`make migrate`). 적용하기 전에 관리자 기능 커밋을 push하면 배포된 웹 서버가 `tags` 테이블과 `mentions.hidden` 컬럼을 찾지 못한다.
-- [ ] Google OAuth 클라이언트를 만들고 `scripts/gcp-env.sh`의 `GOOGLE_CLIENT_ID`를 채운 뒤 `make gcp-setup`, `make deploy-web`을 실행한다(`docs/spec.md`의 '관리자 로그인 설정').
+- [x] 운영 DB에 `20261024000003_admin` 마이그레이션을 적용한다(`make migrate`). 적용하기 전에 관리자 기능 커밋을 push하면 배포된 웹 서버가 `tags` 테이블과 `mentions.hidden` 컬럼을 찾지 못한다.
+- [x] Google OAuth 클라이언트를 만들고 `scripts/gcp-env.sh`의 `GOOGLE_CLIENT_ID`를 채운 뒤 `make gcp-setup`, `make deploy-web`을 실행한다(`docs/spec.md`의 '관리자 로그인 설정').
 - [ ] https://abc-lib.web.app 에서 benelog@gmail.com으로 로그인해서 태그 화면과 책 편집을 확인한다.
 
 ## 데이터와 배치

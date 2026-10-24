@@ -18,7 +18,7 @@ SITE_URL=https://abc-lib.web.app
 
 # 관리자 로그인에 쓰는 Google OAuth 클라이언트 ID. 비밀이 아니다(로그인 화면 주소에 그대로 나온다).
 # 비워 두면 웹 서버가 관리자 로그인을 쓰지 않는다. 만드는 절차는 docs/spec.md의 '관리자 로그인 설정'에 있다.
-GOOGLE_CLIENT_ID=""
+GOOGLE_CLIENT_ID="185613497626-0st92809g1a0v1sqjgovtu81hr874a3v.apps.googleusercontent.com"
 BATCH_JOB=abc-batch
 SCHEDULER_JOB=abc-batch-daily
 
