@@ -1,0 +1,16 @@
+{{define "content"}}
+<h1 class="page-title">공개 북마크</h1>
+<p class="filter-note">회원이 공개한 북마크 카테고리입니다.</p>
+{{if .Categories}}
+<ul class="admin-list category-list shared-list">
+  {{range .Categories}}
+  <li>
+    <a class="category-title" href="/shared/{{.Code}}">{{.ShownTitle}}</a>
+    <span class="count">책 {{.Books}}권</span>
+  </li>
+  {{end}}
+</ul>
+{{else}}
+<p class="empty">아직 공개한 카테고리가 없습니다.</p>
+{{end}}
+{{end}}

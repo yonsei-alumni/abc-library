@@ -28,6 +28,7 @@
       <a href="/books" {{if eq .Nav "books"}}aria-current="page"{{end}}>책</a>
       <a href="/tags" {{if eq .Nav "tags"}}aria-current="page"{{end}}>태그</a>
       <a href="/authors" {{if eq .Nav "authors"}}aria-current="page"{{end}}>저자</a>
+      {{if .UserLogin}}<a href="/shared" {{if eq .Nav "shared"}}aria-current="page"{{end}}>공개 북마크</a>{{end}}
       {{if .User}}<a href="/me" {{if eq .Nav "me"}}aria-current="page"{{end}}>내 북마크</a>{{else if .UserLogin}}<a href="/login?next={{.Path}}">로그인</a>{{end}}
       {{if .Admin}}<a href="/admin/tags" {{if eq .Nav "admin"}}aria-current="page"{{end}}>관리</a>{{end}}
     </nav>

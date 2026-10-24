@@ -148,6 +148,9 @@ func TestCategoriesAndBookmarks(t *testing.T) {
 	if err != nil || !pub.Public || pub.Title != "SF 모음(고침)" || pub.Code != c.Code || len(pubBooks) != 1 {
 		t.Errorf("코드로 찾은 카테고리 = %+v %+v %v", pub, pubBooks, err)
 	}
+	if pubs, err := s.PublicCategories(ctx); err != nil || len(pubs) != 1 || pubs[0].ID != sf || pubs[0].Books != 1 {
+		t.Errorf("공개 카테고리 목록 = %+v, %v", pubs, err)
+	}
 	if _, _, err := s.CategoryByCode(ctx, "zzzzzzzz"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("없는 코드 = %v", err)
 	}
@@ -248,5 +251,34 @@ func TestBookmarksSurviveBatchAndMerge(t *testing.T) {
 	}
 	if got, _ := s.CategoryBooks(ctx, cat); len(got) != 1 || got[0].ID != books[2] {
 		t.Errorf("합친 뒤 카테고리의 책 = %+v", got)
+	}
+}
+
+func TestLowercaseCodesMigration(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	me, _ := s.UserID(ctx, "hash-me")
+	for i, code := range []string{"Ab3dE5gH", "Zz9", "abc"} {
+		if _, err := s.db.NewRaw(`INSERT INTO bookmark_categories (user_id, title, code) VALUES (?, ?, ?)`, me, fmt.Sprint(i), code).Exec(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sql, err := migrationFiles.ReadFile("migrations/20261025000001_lowercase_codes.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.db.ExecContext(ctx, string(sql)); err != nil {
+		t.Fatal(err)
+	}
+	cs, err := s.Categories(ctx, me)
+	if err != nil || len(cs) != 3 {
+		t.Fatalf("카테고리 = %+v, %v", cs, err)
+	}
+	seen := map[string]bool{}
+	for _, c := range cs {
+		if len(c.Code) != book.CodeLen || !book.ValidCode(c.Code) || seen[c.Code] {
+			t.Errorf("다시 뽑은 코드 %q는 겹치지 않는 영어 소문자 %d자여야 한다", c.Code, book.CodeLen)
+		}
+		seen[c.Code] = true
 	}
 }

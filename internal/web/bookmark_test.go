@@ -81,6 +81,16 @@ func (f *fakeStore) CategoryByCode(_ context.Context, code string) (book.Categor
 	return book.Category{}, nil, store.ErrNotFound
 }
 
+func (f *fakeStore) PublicCategories(context.Context) ([]book.Category, error) {
+	var cs []book.Category
+	for _, c := range f.cats {
+		if c.Public {
+			cs = append(cs, c)
+		}
+	}
+	return cs, nil
+}
+
 func (f *fakeStore) CategoryBooks(context.Context, int64) ([]book.Book, error) {
 	return []book.Book{story}, nil
 }
@@ -89,7 +99,7 @@ func (f *fakeStore) AddCategory(_ context.Context, userID int64, c book.Category
 	if err := f.record("AddCategory %d %s", userID, c.Title); err != nil {
 		return 0, err
 	}
-	c.ID, c.UserID, c.Code = int64(100+len(f.cats)), userID, book.NewCode()
+	c.ID, c.UserID, c.Code = int64(100+len(f.cats)), userID, book.NewCode(book.CodeLen)
 	f.cats = append(f.cats, c)
 	return c.ID, nil
 }
@@ -359,14 +369,14 @@ func TestMyBookmarksPage(t *testing.T) {
 	a := newAdminSite(t)
 	uid, me := a.member("hash-me")
 	a.st.cats = []book.Category{
-		{ID: 101, UserID: uid, Title: "올해의 SF", Public: true, Code: "Ab3dE5gH", Books: 1},
-		{ID: 102, UserID: uid, Title: "나중에 읽기", Code: "Zz9yX8wV"},
+		{ID: 101, UserID: uid, Title: "올해의 SF", Public: true, Code: "sfq", Books: 1},
+		{ID: 102, UserID: uid, Title: "나중에 읽기", Code: "prv"},
 	}
 	a.st.marks = map[[2]int64][]int64{{uid, 1}: {101, 102}}
 	body := a.get("/me", me).Body.String()
-	assertContains(t, body, "카테고리 2개", `href="/me/categories/101"`, "https://abc-lib.web.app/shared/Ab3dE5gH", "비공개",
+	assertContains(t, body, "카테고리 2개", `href="/me/categories/101"`, "https://abc-lib.web.app/shared/sfq", "비공개",
 		"북마크 1권", "당신 인생의 이야기", "올해의 SF, 나중에 읽기", "계정 지우기")
-	if strings.Contains(body, "/shared/Zz9yX8wV") {
+	if strings.Contains(body, "/shared/prv") {
 		t.Error("공개하지 않은 카테고리의 주소가 목록에 보인다")
 	}
 }
@@ -375,41 +385,80 @@ func TestSharedCategory(t *testing.T) {
 	a := newAdminSite(t)
 	uid, me := a.member("hash-me")
 	a.st.cats = []book.Category{
-		{ID: 101, UserID: uid, Title: "나만 보는 제목", PublicTitle: "함께 읽을 SF", Public: true, Code: "Ab3dE5gH",
+		{ID: 101, UserID: uid, Title: "나만 보는 제목", PublicTitle: "함께 읽을 SF", Public: true, Code: "sfq",
 			Body: "**굵게**\n둘째 줄\n\n<script>alert(1)</script>\n\n[나쁜 링크](javascript:alert(1)) [좋은 링크](https://example.com/a)"},
-		{ID: 102, UserID: uid, Title: "비공개", Code: "Zz9yX8wV"},
+		{ID: 102, UserID: uid, Title: "비공개", Code: "prv"},
 	}
 
-	rec := a.get("/shared/Ab3dE5gH")
+	rec := a.get("/shared/sfq")
 	body := rec.Body.String()
 	if rec.Code != http.StatusOK {
 		t.Fatalf("code = %d", rec.Code)
 	}
 	assertContains(t, body, "<title>함께 읽을 SF · ABC 도서관</title>", "<strong>굵게</strong><br>", "책 2권",
-		`href="/books/1"`, `href="/books/2"`, `<a href="https://example.com/a" target="_blank" rel="noopener nofollow ugc">좋은 링크</a>`,
-		"이 사이트에 없는 새로운 책을 추가하고 싶다면 밴드에서 책에 대한 글을 써주세요. 1일 이내에 이 사이트에 책이 추가됩니다.")
-	for _, bad := range []string{"<script>alert", "javascript:", "나만 보는 제목", "편집</a>"} {
+		`href="/books/1"`, `href="/books/2"`, `<a href="https://example.com/a" target="_blank" rel="noopener nofollow ugc">좋은 링크</a>`)
+	// 새 책 안내는 만든 사람의 카테고리 화면에만 둔다.
+	for _, bad := range []string{"<script>alert", "javascript:", "나만 보는 제목", "편집</a>", "밴드에서 책에 대한 글을 써주세요"} {
 		if strings.Contains(body, bad) {
 			t.Errorf("공개 화면에 %q가 있으면 안 된다", bad)
 		}
 	}
 
 	// 공개하지 않은 카테고리는 만든 사람에게만 보인다.
-	if rec := a.get("/shared/Zz9yX8wV"); rec.Code != http.StatusNotFound {
+	if rec := a.get("/shared/prv"); rec.Code != http.StatusNotFound {
 		t.Errorf("비공개 카테고리 code = %d", rec.Code)
 	}
 	_, other := a.member("hash-other")
-	if rec := a.get("/shared/Zz9yX8wV", other); rec.Code != http.StatusNotFound {
+	if rec := a.get("/shared/prv", other); rec.Code != http.StatusNotFound {
 		t.Errorf("다른 사용자가 본 비공개 카테고리 code = %d", rec.Code)
 	}
-	rec = a.get("/shared/Zz9yX8wV", me)
+	rec = a.get("/shared/prv", me)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "나에게만 보입니다") || !strings.Contains(rec.Body.String(), `href="/me/categories/102"`) {
 		t.Errorf("만든 사람이 본 비공개 카테고리 code = %d", rec.Code)
 	}
-	for _, path := range []string{"/shared/AAAAAAAA", "/shared/abc", "/shared/ab", "/shared/Ab3dE5gH0", "/shared/Ab-", "/s/Ab3dE5gH"} {
+	// 대문자로 적은 주소도 찾는다.
+	if rec := a.get("/shared/SFQ"); rec.Code != http.StatusOK {
+		t.Errorf("대문자 주소 code = %d", rec.Code)
+	}
+	for _, path := range []string{"/shared/zzz", "/shared/ab", "/shared/sfq0", "/shared/sf-", "/shared/abcdefghi", "/s/sfq"} {
 		if rec := a.get(path); rec.Code != http.StatusNotFound {
 			t.Errorf("%s: code = %d", path, rec.Code)
 		}
+	}
+}
+
+func TestPublicCategoryList(t *testing.T) {
+	a := newAdminSite(t)
+	uid, me := a.member("hash-me")
+	otherID, _ := a.member("hash-other")
+	a.st.cats = []book.Category{
+		{ID: 101, UserID: uid, Title: "나만 보는 제목", PublicTitle: "함께 읽을 SF", Public: true, Code: "sfq", Books: 3},
+		{ID: 102, UserID: uid, Title: "비공개 목록", Code: "prv"},
+		{ID: 103, UserID: otherID, Title: "다른 회원의 목록", Public: true, Code: "oth"},
+	}
+	for _, c := range []*http.Cookie{nil, me} {
+		var cookies []*http.Cookie
+		if c != nil {
+			cookies = append(cookies, c)
+		}
+		rec := a.get("/shared", cookies...)
+		body := rec.Body.String()
+		if rec.Code != http.StatusOK {
+			t.Fatalf("code = %d", rec.Code)
+		}
+		assertContains(t, body, `<a href="/shared" aria-current="page">공개 북마크</a>`, `href="/shared/sfq">함께 읽을 SF</a>`, "책 3권", `href="/shared/oth">다른 회원의 목록</a>`)
+		for _, bad := range []string{"비공개 목록", "/shared/prv", "나만 보는 제목"} {
+			if strings.Contains(body, bad) {
+				t.Errorf("공개 목록에 %q가 있으면 안 된다", bad)
+			}
+		}
+	}
+	a.st.cats = nil
+	assertContains(t, a.get("/shared").Body.String(), "아직 공개한 카테고리가 없습니다")
+
+	// 사용자 로그인을 쓰지 않는 서버에는 공개 북마크가 없다.
+	if code, body := get(t, &fakeStore{}, "/shared"); code != http.StatusNotFound || strings.Contains(body, "공개 북마크") {
+		t.Errorf("사용자 로그인 없는 서버의 /shared code = %d", code)
 	}
 }
 

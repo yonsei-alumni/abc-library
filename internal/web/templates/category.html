@@ -12,7 +12,7 @@
     <p class="hint">여러 줄로 쓸 수 있고 Markdown을 씁니다. 예: <code># 제목</code>, <code>**굵게**</code>, <code>- 목록</code>, <code>[링크](https://example.com)</code>. HTML은 싣지 않습니다.</p>
     <label>공개용 제목 <input name="public_title" value="{{.Form.PublicTitle}}" maxlength="100" placeholder="비우면 제목을 씁니다"></label>
     <label class="check"><input type="checkbox" name="public" value="1" {{if .Form.Public}}checked{{end}}> 공개</label>
-    <p class="hint">공개하면 주소를 아는 누구나 공개용 제목, 본문, 책 목록을 봅니다.
+    <p class="hint">공개하면 '공개 북마크' 목록에 실리고, 누구나 공개용 제목, 본문, 책 목록을 봅니다.
       공개 주소: <a class="share-link" href="/shared/{{.Stored.Code}}">{{.SiteURL}}/shared/{{.Stored.Code}}</a>{{if not .Stored.Public}} (지금은 나에게만 보입니다){{end}}</p>
     <p class="hint">{{template "add-book-hint"}}</p>
     <p><button class="button">저장</button></p>

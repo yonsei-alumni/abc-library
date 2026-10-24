@@ -62,6 +62,7 @@ type Store interface {
 	Categories(ctx context.Context, userID int64) ([]book.Category, error)
 	Category(ctx context.Context, userID, id int64) (book.Category, error)
 	CategoryByCode(ctx context.Context, code string) (book.Category, []book.Book, error)
+	PublicCategories(ctx context.Context) ([]book.Category, error)
 	CategoryBooks(ctx context.Context, categoryID int64) ([]book.Book, error)
 	AddCategory(ctx context.Context, userID int64, c book.Category) (int64, error)
 	UpdateCategory(ctx context.Context, userID int64, c book.Category) error
@@ -129,7 +130,7 @@ func New(st Store, cfg Config, log *slog.Logger) (*Server, error) {
 		"markdown": markdown,
 	}
 	for _, page := range []string{"timeline", "books", "book", "tags", "authors", "error", "login",
-		"admin-tags", "admin-book", "admin-mention", "admin-admins", "me", "category", "shared"} {
+		"admin-tags", "admin-book", "admin-mention", "admin-admins", "me", "category", "shared", "shared-list"} {
 		t, err := template.New("").Funcs(funcs).ParseFS(templateFiles, "templates/layout.html", "templates/parts.html", "templates/"+page+".html")
 		if err != nil {
 			return nil, err

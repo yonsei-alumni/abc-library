@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/yonsei-alumni/abc-library/internal/book"
 	"github.com/yonsei-alumni/abc-library/internal/store"
 )
 
 func (s *Server) bookmarkRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /shared", s.sharedList)
 	mux.HandleFunc("GET /shared/{code}", s.shared)
 
 	user := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, s.requireUser(h)) }
@@ -268,9 +270,24 @@ func (s *Server) deleteAccount(w http.ResponseWriter, r *http.Request) {
 	s.status(w, r.WithContext(ctx), http.StatusOK, "계정을 지웠습니다", "북마크와 카테고리를 모두 지웠습니다. 다시 로그인하면 새 계정으로 시작합니다.")
 }
 
+// sharedList는 모든 사용자의 공개한 카테고리 목록이다. 사용자 로그인을 쓰지 않으면 없다.
+func (s *Server) sharedList(w http.ResponseWriter, r *http.Request) {
+	if s.subjects == nil {
+		s.notFound(w, r)
+		return
+	}
+	cs, err := s.store.PublicCategories(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.render(w, r, "shared-list", "layout", map[string]any{"Title": "공개 북마크", "Nav": "shared", "Categories": cs})
+}
+
 // shared는 공개한 카테고리 화면이다. 공개하지 않은 카테고리는 만든 사람에게만 보인다.
+// 코드는 소문자이므로 대문자로 적은 주소도 찾는다.
 func (s *Server) shared(w http.ResponseWriter, r *http.Request) {
-	code := r.PathValue("code")
+	code := strings.ToLower(r.PathValue("code"))
 	if !book.ValidCode(code) {
 		s.sharedNotFound(w, r)
 		return
@@ -290,7 +307,7 @@ func (s *Server) shared(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.render(w, r, "shared", "layout", map[string]any{
-		"Title": c.ShownTitle(), "Nav": "", "Category": c, "Books": books, "Owner": owner,
+		"Title": c.ShownTitle(), "Nav": "shared", "Category": c, "Books": books, "Owner": owner,
 	})
 }
 

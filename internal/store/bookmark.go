@@ -78,9 +78,12 @@ const categoryColumns = `c.id, c.user_id, c.title, c.body, c.public_title, c.pub
 	(SELECT count(*) FROM bookmark_category_books cb JOIN books b ON b.id = cb.book_id
 	 WHERE cb.category_id = c.id AND ` + visibleBook + `) AS books`
 
-func (s *Store) categories(ctx context.Context, where string, args ...any) ([]book.Category, error) {
+// categoryOrder는 카테고리를 만든 순서로 늘어놓는다.
+const categoryOrder = `c.created_at, c.id`
+
+func (s *Store) categories(ctx context.Context, where, order string, args ...any) ([]book.Category, error) {
 	var views []categoryView
-	err := s.db.NewRaw(`SELECT `+categoryColumns+` FROM bookmark_categories c WHERE `+where+` ORDER BY c.created_at, c.id`, args...).Scan(ctx, &views)
+	err := s.db.NewRaw(`SELECT `+categoryColumns+` FROM bookmark_categories c WHERE `+where+` ORDER BY `+order, args...).Scan(ctx, &views)
 	if err != nil {
 		return nil, err
 	}
@@ -93,12 +96,17 @@ func (s *Store) categories(ctx context.Context, where string, args ...any) ([]bo
 
 // Categories는 사용자의 카테고리를 만든 순서로 돌려준다.
 func (s *Store) Categories(ctx context.Context, userID int64) ([]book.Category, error) {
-	return s.categories(ctx, `c.user_id = ?`, userID)
+	return s.categories(ctx, `c.user_id = ?`, categoryOrder, userID)
+}
+
+// PublicCategories는 모든 사용자의 공개한 카테고리를 최근에 고친 순서로 돌려준다.
+func (s *Store) PublicCategories(ctx context.Context) ([]book.Category, error) {
+	return s.categories(ctx, `c.public`, `c.updated_at DESC, c.id DESC`)
 }
 
 // Category는 사용자의 카테고리 하나다. 다른 사용자의 카테고리는 ErrNotFound다.
 func (s *Store) Category(ctx context.Context, userID, id int64) (book.Category, error) {
-	cs, err := s.categories(ctx, `c.user_id = ? AND c.id = ?`, userID, id)
+	cs, err := s.categories(ctx, `c.user_id = ? AND c.id = ?`, categoryOrder, userID, id)
 	if err != nil {
 		return book.Category{}, err
 	}
@@ -111,7 +119,7 @@ func (s *Store) Category(ctx context.Context, userID, id int64) (book.Category, 
 // CategoryByCode는 공개 주소의 코드로 카테고리와 그 책을 넣은 순서의 역순으로 돌려준다.
 // 공개하지 않은 카테고리도 돌려주므로 보여 줄지는 부르는 쪽이 정한다.
 func (s *Store) CategoryByCode(ctx context.Context, code string) (book.Category, []book.Book, error) {
-	cs, err := s.categories(ctx, `c.code = ?`, code)
+	cs, err := s.categories(ctx, `c.code = ?`, categoryOrder, code)
 	if err != nil {
 		return book.Category{}, nil, err
 	}
@@ -150,9 +158,10 @@ func (s *Store) AddCategory(ctx context.Context, userID int64, c book.Category) 
 	if n >= book.MaxCategories {
 		return 0, ErrTooMany
 	}
-	// 코드가 다른 카테고리와 겹치면 다시 뽑는다. 코드가 짧아서 카테고리가 많아지면 가끔 겹친다.
-	for range 10 {
-		row := &categoryRow{UserID: userID, Title: c.Title, Body: c.Body, PublicTitle: c.PublicTitle, Public: c.Public, Code: book.NewCode()}
+	// 코드가 다른 카테고리와 겹치면 다시 뽑는다. 열 번 겹치면 짧은 코드가 거의 찼다는 뜻이므로 한 글자씩 늘린다.
+	for i := range 30 {
+		code := book.NewCode(book.CodeLen + i/10)
+		row := &categoryRow{UserID: userID, Title: c.Title, Body: c.Body, PublicTitle: c.PublicTitle, Public: c.Public, Code: code}
 		_, err = s.db.NewInsert().Model(row).Returning("id").Exec(ctx)
 		if !isUniqueViolation(err) {
 			return row.ID, err

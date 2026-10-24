@@ -43,22 +43,25 @@ func TestShownTitle(t *testing.T) {
 func TestNewCode(t *testing.T) {
 	seen := map[string]bool{}
 	for range 1000 {
-		code := NewCode()
+		code := NewCode(CodeLen)
 		if len(code) != CodeLen || !ValidCode(code) {
-			t.Fatalf("NewCode() = %q, base62 %d자여야 한다", code, CodeLen)
+			t.Fatalf("NewCode() = %q, 영어 소문자 %d자여야 한다", code, CodeLen)
 		}
 		seen[code] = true
 	}
-	// 3자는 238,328 가지라서 1000개 중 몇 개는 겹칠 수 있다. 겹치면 저장할 때 다시 뽑는다.
-	if len(seen) < 990 {
+	// 3자는 17,576 가지라서 1000개 중 몇십 개는 겹친다. 겹치면 저장할 때 다시 뽑는다.
+	if len(seen) < 940 {
 		t.Errorf("1000개 중 %d개만 달랐다. 고르게 뽑지 않는다", len(seen))
 	}
-	for _, good := range []string{"abc", "A0z", "Ab3dE5gH"} {
+	if code := NewCode(4); len(code) != 4 || !ValidCode(code) {
+		t.Errorf("NewCode(4) = %q", code)
+	}
+	for _, good := range []string{"abc", "xyzw", "abcdefgh"} {
 		if !ValidCode(good) {
-			t.Errorf("ValidCode(%q)는 참이어야 한다(처음에 만든 8자 코드도 받는다)", good)
+			t.Errorf("ValidCode(%q)는 참이어야 한다", good)
 		}
 	}
-	for _, bad := range []string{"", "ab", "abcdefghi", "ab-", "a_c", "abé", "../", "a c"} {
+	for _, bad := range []string{"", "ab", "abcdefghi", "Abc", "ab1", "ab-", "abé", "../", "a c"} {
 		if ValidCode(bad) {
 			t.Errorf("ValidCode(%q)는 거짓이어야 한다", bad)
 		}

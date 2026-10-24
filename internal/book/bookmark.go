@@ -66,38 +66,40 @@ func CleanCategory(c Category) (Category, error) {
 	return c, nil
 }
 
-const base62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+// codeLetters는 공개 주소 코드에 쓰는 글자다. 읽고 받아 적기 쉽게 영어 소문자만 쓴다.
+const codeLetters = "abcdefghijklmnopqrstuvwxyz"
 
-// CodeLen은 새로 만드는 공개 주소 코드의 길이다. 62^3(238,328) 가지다.
-// 모든 주소를 차례로 열어 보면 공개한 카테고리를 찾을 수 있지만, 공개하지 않은 카테고리는 만든 사람에게만 보인다.
+// CodeLen은 새로 만드는 공개 주소 코드의 길이다. 26^3(17,576) 가지다.
+// 겹치는 코드가 많아지면 저장할 때 한 글자 더 긴 코드를 뽑는다.
 const CodeLen = 3
 
-// maxCodeLen은 받아들이는 코드의 최대 길이다. 처음에는 8자로 만들었으므로 그때 만든 주소도 받는다.
+// maxCodeLen은 받아들이는 코드의 최대 길이다.
 const maxCodeLen = 8
 
-// NewCode는 공개 주소에 쓰는 임의의 base62 코드다. 번호를 바꾼 것이 아니라서 만든 순서로 주소를 짐작할 수 없다.
-func NewCode() string {
-	code := make([]byte, 0, CodeLen)
-	buf := make([]byte, CodeLen*2)
-	for len(code) < CodeLen {
+// NewCode는 공개 주소에 쓰는 임의의 영어 소문자 코드다. n은 길이다.
+// 번호를 바꾼 것이 아니라서 만든 순서로 주소를 짐작할 수 없다.
+func NewCode(n int) string {
+	code := make([]byte, 0, n)
+	buf := make([]byte, n*2)
+	for len(code) < n {
 		_, _ = rand.Read(buf)
 		for _, b := range buf {
-			// 62의 배수(248) 밖의 값은 버려서 글자마다 확률이 같게 한다.
-			if b < 248 && len(code) < CodeLen {
-				code = append(code, base62[b%62])
+			// 26의 배수(234) 밖의 값은 버려서 글자마다 확률이 같게 한다.
+			if b < 234 && len(code) < n {
+				code = append(code, codeLetters[b%26])
 			}
 		}
 	}
 	return string(code)
 }
 
-// ValidCode는 s가 공개 주소 코드의 꼴(base62 CodeLen~8자)인지 알려 준다.
+// ValidCode는 s가 공개 주소 코드의 꼴(영어 소문자 CodeLen~8자)인지 알려 준다.
 func ValidCode(s string) bool {
 	if len(s) < CodeLen || len(s) > maxCodeLen {
 		return false
 	}
 	for i := range len(s) {
-		if !strings.ContainsRune(base62, rune(s[i])) {
+		if s[i] < 'a' || s[i] > 'z' {
 			return false
 		}
 	}
