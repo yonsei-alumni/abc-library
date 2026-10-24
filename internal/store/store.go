@@ -176,6 +176,9 @@ func (s *Store) SavePost(ctx context.Context, p book.Post, findings []book.Findi
 			return err
 		}
 
+		// 추출 결과의 책 두 개가 ISBN이나 정규화한 제목으로 DB의 같은 책에 묶일 수 있다.
+		// 그때 같은 본문 언급이나 같은 댓글 언급이 한 책에 두 번 붙지 않게 한다.
+		saved := map[string]bool{}
 		for _, f := range findings {
 			if len(f.Mentions) == 0 {
 				continue
@@ -185,6 +188,11 @@ func (s *Store) SavePost(ctx context.Context, p book.Post, findings []book.Findi
 				return fmt.Errorf("게시글 %d의 책 %q 저장: %w", p.No, f.Book.Title, err)
 			}
 			for _, m := range f.Mentions {
+				key := fmt.Sprintf("%d|%s|%d", bookID, m.Kind, m.At.UnixNano())
+				if saved[key] {
+					continue
+				}
+				saved[key] = true
 				links := m.Links
 				if links == nil {
 					links = []book.Link{}

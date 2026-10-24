@@ -145,6 +145,36 @@ func TestSavePostAndQueries(t *testing.T) {
 	}
 }
 
+func TestSavePostDoesNotDuplicateMentions(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	// 원제와 번역 제목으로 따로 뽑혔지만 ISBN이 같아서 DB에서는 같은 책이다.
+	story := book.Book{ISBN13: "9791196914806", Title: "당신 인생의 이야기", Authors: []string{"테드 창"}}
+	original := book.Book{ISBN13: "9791196914806", Title: "Stories of Your Life", Authors: []string{"Ted Chiang"}}
+	findings := []book.Finding{
+		{Book: story, Mentions: []book.Mention{mention(book.InPost, 1, "본문 요약"), mention(book.InComment, 2, "댓글 요약")}},
+		{Book: original, Mentions: []book.Mention{mention(book.InPost, 1, "같은 본문의 다른 요약"), mention(book.InComment, 2, "같은 댓글"), mention(book.InComment, 3, "다른 댓글")}},
+	}
+	// 같은 글을 여러 번 다시 추출해도 언급 수가 그대로여야 한다.
+	for range 3 {
+		if err := s.SavePost(ctx, book.Post{No: 1, PostedAt: day(1), ContentHash: "h"}, findings); err != nil {
+			t.Fatal(err)
+		}
+	}
+	shelf, err := s.Books(ctx, Filter{}, 10, 0)
+	if err != nil || len(shelf) != 1 {
+		t.Fatalf("책은 한 권이어야 한다: %+v, %v", shelf, err)
+	}
+	_, mentions, err := s.Book(ctx, shelf[0].Book.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mentions) != 3 || mentions[0].Summary != "본문 요약" || mentions[1].Summary != "댓글 요약" || mentions[2].Summary != "다른 댓글" {
+		t.Errorf("본문 언급 하나와 서로 다른 댓글 언급 둘만 남아야 한다: %+v", mentions)
+	}
+}
+
 func TestSearchCountsAndFilter(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
