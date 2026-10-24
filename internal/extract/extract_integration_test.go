@@ -142,3 +142,75 @@ func TestExtractSeriesAndUnrelatedLinksWithClaude(t *testing.T) {
 		t.Errorf("시리즈를 통째로 다루면 세트 ISBN으로 한 번만 넣어야 한다: %+v", reapers)
 	}
 }
+
+// 대화방 주간 요약처럼 본문이 책 한 권과 책이 아닌 여러 이야기를 함께 담으면,
+// 책 이야기 밖에 있는 링크는 그 책에 붙지 않아야 한다.
+func TestExtractDigestDropsLinksOutsideBookWithClaude(t *testing.T) {
+	client, err := NewClient()
+	if err != nil {
+		t.Skip(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	posted := time.Now().Add(-24 * time.Hour)
+	in := Input{
+		PostedAt: posted,
+		Text: `#대화방_주간요약
+1. 테드 창의 '당신 인생의 이야기'가 다시 화제였습니다. 원작 영화 '컨택트'와 비교하는 이야기가 많았고, 독서 기록을 공유해 주신 분도 있었어요.
+2. 카드사와 영화사의 캐릭터 카드 제휴 소식이 공유됐습니다.
+3. 챗GPT가 접속부사가 들어간 문장을 자주 틀린다는 기사가 화제였어요.
+4. AI 회사가 자사 AI를 함부로 대하지 말자는 원칙을 정했다는 기사도 나눴습니다.`,
+		Links: []book.Link{
+			{URL: "https://bookshelf.example.com/story-of-your-life", Title: "당신 인생의 이야기 | 독서 기록"},
+			{URL: "https://news.example.com/card", Title: "카드사, 영화사와 독점 제휴 캐릭터 카드 출시"},
+			{URL: "https://news.example.com/chatgpt", Title: "챗GPT, 접속부사 포함된 문장 5개 중 1개 틀렸다"},
+			{URL: "https://news.example.com/ai-welfare", Title: "\"AI도 괴롭히면 안 된다\"…AI 회사 원칙 명문화"},
+		},
+	}
+	got, err := New(&client.Beta.Messages, kyobo.NewClient()).Extract(ctx, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || !strings.Contains(got[0].Book.Title, "당신 인생의 이야기") {
+		t.Fatalf("책은 당신 인생의 이야기 하나여야 한다: %+v", got)
+	}
+	links := got[0].Mentions[0].Links
+	t.Logf("링크: %+v", links)
+	if len(links) != 1 || !strings.Contains(links[0].URL, "bookshelf") {
+		t.Errorf("책 이야기 밖의 기사 링크는 빠져야 한다: %+v", links)
+	}
+}
+
+// 제목 없는 독서 기록 링크만 있어도 주소에 든 책 제목으로 책을 찾는지 본다.
+func TestExtractBooksFromReadingLogLinksWithClaude(t *testing.T) {
+	client, err := NewClient()
+	if err != nil {
+		t.Skip(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	in := Input{
+		PostedAt: time.Now().Add(-24 * time.Hour),
+		Text:     "요즘 달리기에 빠져서 달리기 책을 몇 권 읽고 독서 기록을 남겼어요.",
+		Links: []book.Link{
+			{URL: "https://bookshelf.example.com/%EC%97%B0%ED%9D%AC%EB%8F%99-%EB%9F%AC%EB%84%88/", Title: ""},
+			{URL: "https://bookshelf.example.com/born-to-run/", Title: ""},
+		},
+	}
+	got, err := New(&client.Beta.Messages, kyobo.NewClient()).Extract(ctx, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var runner, born bool
+	for _, f := range got {
+		t.Logf("책: %+v 링크: %+v", f.Book, f.Mentions[0].Links)
+		title := strings.ToLower(strings.ReplaceAll(f.Book.Title, " ", ""))
+		runner = runner || strings.Contains(title, "연희동러너")
+		born = born || strings.Contains(title, "본투런") || strings.Contains(title, "borntorun")
+	}
+	if !runner || !born {
+		t.Errorf("독서 기록 링크 주소로 '연희동 러너'와 '본 투 런'을 찾아야 한다: %+v", got)
+	}
+}

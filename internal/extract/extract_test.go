@@ -78,6 +78,7 @@ var (
 			{URL: "https://product.kyobobook.co.kr/detail/S000001981838", Title: "당신 인생의 이야기 - 교보문고"},
 			{URL: "https://news.example.com/ted-chiang", Title: ""},
 			{URL: "https://blog.example.com/review", Title: "리뷰"},
+			{URL: "https://bookshelf.example.com/%EC%88%A8/", Title: ""},
 		},
 		Images: []Image{{MediaType: "image/jpeg", Data: []byte("jpeg")}},
 		Comments: []Comment{
@@ -126,8 +127,9 @@ func TestExtractBuildsMentionsAndAttachesLinks(t *testing.T) {
 	if len(story.Mentions) != 1 || story.Mentions[0].Kind != book.InPost || !story.Mentions[0].At.Equal(postedAt) {
 		t.Fatalf("본문 언급 = %+v", story.Mentions)
 	}
-	if links := story.Mentions[0].Links; len(links) != 2 || links[0].Title != "news.example.com" || links[1].Title != "리뷰" {
-		t.Errorf("서점 링크만 빼고 본문 링크를 모두 붙여야 한다: %+v", links)
+	if links := story.Mentions[0].Links; len(links) != 3 || links[0].Title != "news.example.com" || links[1].Title != "리뷰" ||
+		links[2].URL != "https://bookshelf.example.com/%EC%88%A8/" {
+		t.Errorf("서점 링크만 빼고 본문 링크를 원래 주소 그대로 모두 붙여야 한다: %+v", links)
 	}
 
 	breath := got[1]
@@ -171,31 +173,31 @@ func TestExtractDropsUnrelatedLinks(t *testing.T) {
 		{URL: "https://blog.example.com/breath", Title: "숨 리뷰"},
 		{URL: "https://naver.me/map", Title: "네이버지도"},
 	}})
-	// 링크 번호: 본문 1~3, 1번 댓글 4~5, 3번 댓글 6~7
+	// 링크 번호: 본문 1~4, 1번 댓글 5~6, 3번 댓글 7~8
 	story := found("당신 인생의 이야기", "", []string{"SF"}, "요약", nil)
-	story["unrelated_links"] = []int{2, 0, 99}
+	story["unrelated_links"] = []int{2, 4, 0, 99}
 	breath := found("숨", "", []string{"SF"}, "", nil, m{"comment": 1, "summary": "추천"}, m{"comment": 3, "summary": "리뷰 공유"})
-	breath["unrelated_links"] = []int{4, 7}
+	breath["unrelated_links"] = []int{5, 8}
 	api := &fakeAPI{responses: []string{message("end_turn", textBlock(m{"books": []m{story, breath}}))}}
 
 	got, err := New(api, &fakeSearch{}).Extract(context.Background(), in)
 	if err != nil || len(got) != 2 {
 		t.Fatalf("got %+v, %v", got, err)
 	}
-	// 본문이 한 권만 다뤄서 본문 링크를 모두 붙이지만, 관련 없다고 판정한 2번은 뺀다. 없는 번호는 무시한다.
+	// 본문이 한 권만 다뤄서 본문 링크를 모두 붙이지만, 관련 없다고 판정한 2번과 4번은 뺀다. 없는 번호는 무시한다.
 	if l := got[0].Mentions[0].Links; len(l) != 1 || l[0].URL != "https://blog.example.com/review" {
 		t.Errorf("본문 링크 = %+v", l)
 	}
-	// 1번 댓글의 4번(유튜브)은 관련 없고 5번은 서점 링크라서 남는 링크가 없다.
+	// 1번 댓글의 5번(유튜브)은 관련 없고 6번은 서점 링크라서 남는 링크가 없다.
 	if l := got[1].Mentions[0].Links; len(l) != 0 {
 		t.Errorf("1번 댓글 링크 = %+v", l)
 	}
-	// 3번 댓글은 7번(지도)만 빠진다.
+	// 3번 댓글은 8번(지도)만 빠진다.
 	if l := got[1].Mentions[1].Links; len(l) != 1 || l[0].URL != "https://blog.example.com/breath" {
 		t.Errorf("3번 댓글 링크 = %+v", l)
 	}
 	req, _ := json.Marshal(api.calls[0])
-	for _, want := range []string{"링크 [6] 숨 리뷰", "링크 [7] 네이버지도"} {
+	for _, want := range []string{"링크 [7] 숨 리뷰", "링크 [8] 네이버지도"} {
 		if !strings.Contains(string(req), want) {
 			t.Errorf("요청에 %s가 없다", want)
 		}
@@ -217,7 +219,7 @@ func TestExtractRequest(t *testing.T) {
 		`"model":"claude-opus-5-5"`, `"effort":"medium"`, `"type":"json_schema"`, `"fallbacks":"default"`,
 		`"name":"search_kyobo"`, `"strict":true`, `"media_type":"image/jpeg"`, `게시일: 2026-10-21`,
 		`[3] 리뷰 https://blog.example.com/review`, `[1] (2026-10-21) 같은 작가의 '숨'도 좋아요`,
-		`링크 [4]  https://www.youtube.com/watch?v=abc`, `링크 [5] 알라딘 https://www.aladin.co.kr`, `[2] (2026-10-21) 다음 모임 언제예요?`, `"enum":["AI","SF","과학"`,
+		`링크 [5]  https://www.youtube.com/watch?v=abc`, `링크 [6] 알라딘 https://www.aladin.co.kr`, `[4]  https://bookshelf.example.com/숨/`, `[2] (2026-10-21) 다음 모임 언제예요?`, `"enum":["AI","SF","과학"`,
 	} {
 		if !strings.Contains(req, want) {
 			t.Errorf("요청에 %s가 없다", want)

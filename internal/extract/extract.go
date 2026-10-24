@@ -170,7 +170,7 @@ func userContent(in Input) []anthropic.BetaContentBlockParamUnion {
 		b.WriteString("(없음)\n")
 	}
 	for i, l := range in.Links {
-		fmt.Fprintf(&b, "[%d] %s %s\n", i+1, l.Title, l.URL)
+		fmt.Fprintf(&b, "[%d] %s %s\n", i+1, l.Title, readableURL(l.URL))
 	}
 	b.WriteString("\n## 댓글\n")
 	if len(in.Comments) == 0 {
@@ -179,11 +179,20 @@ func userContent(in Input) []anthropic.BetaContentBlockParamUnion {
 	for i, c := range in.Comments {
 		fmt.Fprintf(&b, "[%d] (%s) %s\n", i+1, c.At.Format("2006-01-02"), strings.TrimSpace(c.Text))
 		for j, l := range c.Links {
-			fmt.Fprintf(&b, "    링크 [%d] %s %s\n", commentLinkNo(in, i, j), l.Title, l.URL)
+			fmt.Fprintf(&b, "    링크 [%d] %s %s\n", commentLinkNo(in, i, j), l.Title, readableURL(l.URL))
 		}
 	}
 	fmt.Fprintf(&b, "\n## 사진\n첨부 사진 %d장을 함께 보냈다.\n", len(in.Images))
 	return append(blocks, anthropic.NewBetaTextBlock(b.String()))
+}
+
+// readableURL은 퍼센트 인코딩된 주소를 사람이 읽을 수 있게 푼다. 독서 기록 주소처럼 제목 없는 링크는
+// 주소에 든 책 제목(예: /연희동-러너/)이 Claude가 책을 알아볼 유일한 단서다. 저장하는 주소는 바꾸지 않는다.
+func readableURL(raw string) string {
+	if s, err := url.PathUnescape(raw); err == nil {
+		return s
+	}
+	return raw
 }
 
 // commentLinkNo는 i번째 댓글(0부터)의 j번째 링크(0부터)에 붙이는 번호다. 본문 링크 번호 다음부터 이어진다.
