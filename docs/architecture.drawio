@@ -1,0 +1,159 @@
+<mxfile host="drawio" agent="abc-library">
+  <diagram id="infra" name="인프라">
+    <mxGraphModel dx="1600" dy="960" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1480" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <!-- Google Cloud 프로젝트 -->
+        <mxCell id="gcp" value="Google Cloud 프로젝트 abc-library-512606" style="rounded=1;arcSize=2;whiteSpace=wrap;html=1;dashed=1;fillColor=#EEF5FF;strokeColor=#4285F4;verticalAlign=top;align=left;spacingLeft=12;spacingTop=6;fontStyle=1;fontSize=14;fontColor=#1A4C9C;" vertex="1" parent="1">
+          <mxGeometry x="470" y="30" width="620" height="770" as="geometry" />
+        </mxCell>
+
+        <!-- 방문자 -->
+        <mxCell id="visitor" value="방문자&lt;br&gt;(회원, 브라우저)" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fillColor=#FFFFFF;strokeColor=#333333;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="70" y="100" width="36" height="66" as="geometry" />
+        </mxCell>
+
+        <!-- Firebase Hosting -->
+        <mxCell id="firebase" value="&lt;b&gt;Firebase Hosting&lt;/b&gt;&lt;br&gt;https://abc-lib.web.app&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;공개 주소, 모든 요청을 Cloud Run으로 전달&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF3E0;strokeColor=#F57C00;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="200" y="90" width="230" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- Cloud Run 웹 서비스 -->
+        <mxCell id="web" value="&lt;b&gt;Cloud Run 서비스 abc-library&lt;/b&gt;&lt;br&gt;asia-southeast1 (싱가포르)&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;Go 웹 서버 · HTMX 화면 · 최소 인스턴스 0&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1E88E5;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="510" y="90" width="270" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- Cloud Scheduler -->
+        <mxCell id="scheduler" value="&lt;b&gt;Cloud Scheduler&lt;/b&gt;&lt;br&gt;매일 03:00 KST" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1E88E5;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="510" y="300" width="190" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- Cloud Run Job -->
+        <mxCell id="job" value="&lt;b&gt;Cloud Run Job abc-batch&lt;/b&gt;&lt;br&gt;asia-northeast3 (서울)&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;Go 일일 배치 · Playwright headless Chromium&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E3F2FD;strokeColor=#1E88E5;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="780" y="285" width="280" height="100" as="geometry" />
+        </mxCell>
+
+        <!-- Artifact Registry -->
+        <mxCell id="registry" value="&lt;b&gt;Artifact Registry&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;웹·배치 컨테이너 이미지&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#757575;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="510" y="480" width="190" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- Secret Manager -->
+        <mxCell id="secrets" value="&lt;b&gt;Secret Manager&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;DB 비밀번호 · 밴드 로그인 세션 · Claude API 키&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#757575;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="780" y="480" width="280" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- Cloud Monitoring -->
+        <mxCell id="monitoring" value="&lt;b&gt;Cloud Monitoring&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;배치 실패 알림&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#757575;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="780" y="660" width="280" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- GitHub Actions -->
+        <mxCell id="github" value="&lt;b&gt;GitHub Actions&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;push마다 make ci, main은 빌드·배포&lt;br&gt;(키 없이 Workload Identity Federation)&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#24292F;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="180" y="470" width="230" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- 운영자 메일 -->
+        <mxCell id="mail" value="&lt;b&gt;운영자 메일&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;밴드 세션 만료 등&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#757575;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="200" y="660" width="230" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- Neon -->
+        <mxCell id="neon" value="&lt;b&gt;Neon PostgreSQL&lt;/b&gt;&lt;br&gt;aws-ap-southeast-1 (싱가포르)&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;책 · 언급 요약 · 태그 · 실행 기록&lt;/font&gt;" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#E0F7F1;strokeColor=#00A67E;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1170" y="80" width="270" height="110" as="geometry" />
+        </mxCell>
+
+        <!-- 네이버 밴드 -->
+        <mxCell id="band" value="&lt;b&gt;네이버 밴드 (비공개)&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;ABC 게시글 · 댓글 · 첨부 사진&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#2DB400;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1170" y="245" width="270" height="60" as="geometry" />
+        </mxCell>
+
+        <!-- Claude API -->
+        <mxCell id="claude" value="&lt;b&gt;Claude API&lt;/b&gt; (claude-opus-5-5)&lt;br&gt;&lt;div style=&quot;text-align:left;font-size:11px&quot;&gt;· 본문·댓글을 해석해서 다룬 책을 찾음&lt;br&gt;· 첨부 사진 OCR (책 표지, 책장 사진)&lt;br&gt;· 교보문고 검색 도구로 ISBN 확정&lt;br&gt;· 개인 정보를 뺀 언급 요약&lt;br&gt;· 관련 없는 링크 판정, 태그 선택&lt;/div&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FBE9E7;strokeColor=#D97757;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1170" y="320" width="270" height="140" as="geometry" />
+        </mxCell>
+
+        <!-- 교보문고 -->
+        <mxCell id="kyobo" value="&lt;b&gt;교보문고&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:11px&quot;&gt;책 검색(판본·ISBN) · 표지 이미지 · 구매 링크&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8EAF6;strokeColor=#3F51B5;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1170" y="560" width="270" height="70" as="geometry" />
+        </mxCell>
+
+        <!-- 연결: 화면 요청 -->
+        <mxCell id="e1" value="HTTPS" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#F57C00;fontSize=11;" edge="1" parent="1" source="visitor" target="firebase">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e2" value="rewrite" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#F57C00;fontSize=11;" edge="1" parent="1" source="firebase" target="web">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="조회 (SQL)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#F57C00;fontSize=11;" edge="1" parent="1" source="web" target="neon">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="표지 이미지, 구매 링크" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;strokeColor=#3F51B5;fontSize=11;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="visitor" target="kyobo">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="88" y="850" />
+              <mxPoint x="1305" y="850" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 연결: 일일 배치 -->
+        <mxCell id="e5" value="실행" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#1E88E5;fontSize=11;" edge="1" parent="1" source="scheduler" target="job">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" value="① 새 글·댓글·사진 읽기&lt;br&gt;(화면만 읽음, 쓰기 없음)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#2DB400;fontSize=11;exitX=1;exitY=0.1;exitDx=0;exitDy=0;entryX=0;entryY=0.833;entryDx=0;entryDy=0;" edge="1" parent="1" source="job" target="band">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" value="② 글·사진 보내기&lt;br&gt;→ 책 정보 JSON" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#D97757;fontSize=11;exitX=1;exitY=0.75;exitDx=0;exitDy=0;entryX=0;entryY=0.2857;entryDx=0;entryDy=0;" edge="1" parent="1" source="job" target="claude">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e8" value="③ search_kyobo 도구 실행" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#3F51B5;fontSize=11;exitX=0.75;exitY=1;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="job" target="kyobo">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="990" y="455" />
+              <mxPoint x="1110" y="455" />
+              <mxPoint x="1110" y="595" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e9" value="④ 책·언급 저장" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;strokeWidth=2;strokeColor=#00A67E;fontSize=11;exitX=0.5;exitY=0;exitDx=0;exitDy=0;entryX=0;entryY=0.75;entryDx=0;entryDy=0;" edge="1" parent="1" source="job" target="neon">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="920" y="163" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- 연결: 운영 -->
+        <mxCell id="e10" value="비밀 값" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;strokeColor=#757575;fontSize=11;" edge="1" parent="1" source="secrets" target="job">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e11" value="DB 비밀번호" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;strokeColor=#757575;fontSize=11;exitX=0;exitY=0.5;exitDx=0;exitDy=0;entryX=0.25;entryY=1;entryDx=0;entryDy=0;" edge="1" parent="1" source="secrets" target="web">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="740" y="515" />
+              <mxPoint x="740" y="240" />
+              <mxPoint x="578" y="240" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e12" value="이미지 빌드·푸시" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;strokeColor=#24292F;fontSize=11;" edge="1" parent="1" source="github" target="registry">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e13" value="실패하면" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;strokeColor=#757575;fontSize=11;exitX=1;exitY=0.95;exitDx=0;exitDy=0;entryX=1;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="job" target="monitoring">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1075" y="380" />
+              <mxPoint x="1075" y="695" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e14" value="메일" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;dashed=1;strokeColor=#757575;fontSize=11;" edge="1" parent="1" source="monitoring" target="mail">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
