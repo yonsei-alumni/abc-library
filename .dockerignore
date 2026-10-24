@@ -4,6 +4,8 @@ band-state.json
 .env.*
 .envrc
 .envrc.example
+# GitHub Actions의 google-github-actions/auth가 작업 디렉터리에 만드는 인증 설정 파일
+gha-creds-*.json
 
 .git
 .github

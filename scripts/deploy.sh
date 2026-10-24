@@ -24,7 +24,8 @@ case "$target" in
 esac
 
 tag="$(git rev-parse --short=12 HEAD)"
-if [[ -n "$(git status --porcelain)" ]]; then
+# 추적하지 않는 파일(GitHub Actions의 gha-creds-*.json 등)은 이미지에 들어가지 않으므로 보지 않는다.
+if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
   tag="${tag}-dirty-$(date +%Y%m%d%H%M%S)"
 fi
 registry="${region}-docker.pkg.dev"
