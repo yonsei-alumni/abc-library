@@ -13,7 +13,7 @@
 {{range .Entries}}
 <li class="entry">
   <time class="entry-date" datetime="{{isoDate .PostedAt}}">{{date .PostedAt}}</time>
-  <a class="entry-card" href="/books/{{.Book.ID}}">
+  <a class="entry-card" href="/books/{{.Book.ID}}{{if not .IsNew}}#post-{{.PostNo}}{{end}}">
     {{template "cover" .Book}}
     <span class="entry-body">
       <span class="badge {{if .IsNew}}badge-new{{end}}">{{if .IsNew}}새 책{{else}}이야기 추가{{end}}</span>

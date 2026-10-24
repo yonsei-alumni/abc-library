@@ -16,7 +16,7 @@
     <h2>이야기 {{.Count}}개</h2>
     <ol class="threads">
     {{range .Threads}}
-      <li class="thread">
+      <li class="thread" id="post-{{.PostNo}}">
         {{with .Post}}
         <div class="mention">
           <p class="mention-meta"><span class="kind">게시글</span> <time datetime="{{isoDate .At}}">{{date .At}}</time>{{if $.Admin}} <a class="edit-link" href="/admin/mentions/{{.ID}}">편집</a>{{end}}</p>

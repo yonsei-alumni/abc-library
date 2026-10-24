@@ -208,6 +208,11 @@ func TestTimelinePagesWithHTMX(t *testing.T) {
 	assertContains(t, body, "<title>최근 소식 · ABC 도서관</title>", "새 책", "이야기 추가", "/books/1",
 		"https://contents.kyobobook.co.kr/sih/fit-in/240x0/pdt/9791196914806.jpg", `hx-get="/?page=2"`, "2026년 10월 21일",
 		`<span class="entry-excerpt">언어를 배우며 시간을 다르게 본다.</span>`)
+	// 새 책은 책 상세의 처음으로, 이야기 추가는 그 글의 언급 묶음으로 연결한다.
+	if strings.Count(body, `href="/books/1"`) != 1 || strings.Count(body, `href="/books/1#post-184"`) != pageSize-1 {
+		t.Error("이야기 추가 소식은 책 상세의 그 글 묶음으로 연결해야 한다")
+	}
+
 
 	code, body = get(t, st, "/?page=2", "HX-Request", "true", "HX-Target", "timeline-more")
 	if code != http.StatusOK || strings.Contains(body, "<html") {
@@ -258,11 +263,15 @@ func TestBookDetailShowsThreads(t *testing.T) {
 		"/books?tag=SF", "#SF", "/books?author=%ed%85%8c%eb%93%9c%20%ec%b0%bd")
 
 	// 184번 글은 본문 아래에 그 글의 댓글이 붙고, 190번 글은 댓글만 있다.
-	threads := strings.Split(body, `<li class="thread">`)
+	threads := strings.Split(body, `<li class="thread" `)
 	if len(threads) != 3 {
 		t.Fatalf("게시글 묶음 수 = %d", len(threads)-1)
 	}
 	first, second := threads[1], threads[2]
+	// 소식에서 '이야기 추가'를 누르면 그 글의 묶음으로 바로 간다.
+	if !strings.HasPrefix(first, `id="post-184"`) || !strings.HasPrefix(second, `id="post-190"`) {
+		t.Error("게시글 묶음에 글 번호로 만든 id가 있어야 한다")
+	}
 	if !strings.Contains(first, "본문 첫 줄") || !strings.Contains(first, `class="replies"`) || !strings.Contains(first, "같은 글의 댓글 요약") {
 		t.Error("첫 묶음은 본문과 그 아래 댓글이어야 한다")
 	}

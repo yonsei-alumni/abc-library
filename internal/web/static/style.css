@@ -102,7 +102,7 @@ main.wrap { padding-top: 28px; padding-bottom: 48px; min-height: 60vh; }
 .mentions h2 { font-size: 1.15rem; margin: 0 0 12px; }
 .threads, .replies { list-style: none; margin: 0; padding: 0; }
 .threads { display: flex; flex-direction: column; gap: 14px; }
-.thread { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; }
+.thread { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; scroll-margin-top: 16px; }
 .mention-meta { margin: 0; color: var(--muted); font-size: .85rem; display: flex; align-items: center; gap: 8px; }
 .kind { font-size: .75rem; padding: 1px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
 .kind-comment { background: var(--line); color: var(--muted); }
