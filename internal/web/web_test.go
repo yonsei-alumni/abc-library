@@ -213,7 +213,6 @@ func TestTimelinePagesWithHTMX(t *testing.T) {
 		t.Error("이야기 추가 소식은 책 상세의 그 글 묶음으로 연결해야 한다")
 	}
 
-
 	code, body = get(t, st, "/?page=2", "HX-Request", "true", "HX-Target", "timeline-more")
 	if code != http.StatusOK || strings.Contains(body, "<html") {
 		t.Errorf("더 보기 요청에는 목록 조각만 그려야 한다: %d", code)
