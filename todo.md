@@ -5,7 +5,7 @@
 구성과 절차는 `docs/spec.md`의 '운영 환경'과 '배포'를 따른다. 2026-10-24에 웹 서버, 배치 Job, 스케줄러, 실패 알림까지 배포했고, 같은 날 프로젝트를 `benelog`에서 `abc-library-512606`으로 옮겼다.
 
 - [ ] 2026-10-25 03:00 첫 예약 실행 결과를 확인한다(`make status`, Cloud Run Job 로그). 밴드 세션 파일과 Claude API 키를 운영에서 처음 쓰는 실행이다.
-- [ ] 이 변경을 `main`에 push한 뒤 GitHub Actions의 CI와 배포가 통과하는지 확인한다.
+- [x] 이 변경을 `main`에 push한 뒤 GitHub Actions의 CI와 배포가 통과하는지 확인한다.
 - [ ] claude.ai **Settings → Billing → API credits**에서 Max 크레딧을 받을 Console 조직을 연결했는지 확인한다(사용자).
 - [ ] Claude Console에서 `abc-library` 워크스페이스를 만들고 월 지출 한도($20)를 건 뒤, 그 워크스페이스의 API 키로 `claude-api-key` 비밀을 바꾼다.
 - [ ] (나중에) Claude 인증을 API 키에서 Workload Identity Federation으로 바꾼다.
