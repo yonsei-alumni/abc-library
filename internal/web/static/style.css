@@ -103,6 +103,10 @@ main.wrap { padding-top: 28px; padding-bottom: 48px; min-height: 60vh; }
 .threads, .replies { list-style: none; margin: 0; padding: 0; }
 .threads { display: flex; flex-direction: column; gap: 14px; }
 .thread { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; scroll-margin-top: 16px; }
+/* 소식에서 눌러 온 글의 묶음. 테두리는 남기고 배경은 잠깐 칠했다가 빼서 어느 묶음인지 알게 한다. */
+.thread-focus { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); animation: thread-focus 2.4s ease-out; }
+@keyframes thread-focus { from { background: var(--accent-soft); } to { background: var(--card); } }
+@media (prefers-reduced-motion: reduce) { .thread-focus { animation: none; } }
 .mention-meta { margin: 0; color: var(--muted); font-size: .85rem; display: flex; align-items: center; gap: 8px; }
 .kind { font-size: .75rem; padding: 1px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
 .kind-comment { background: var(--line); color: var(--muted); }

@@ -17,7 +17,7 @@ import (
 var pwaFiles embed.FS
 
 // precached는 서비스 워커가 설치될 때 받아 두는 정적 파일이다. 오프라인 화면을 그리는 데 쓴다.
-var precached = []string{"style.css", "htmx.min.js", "icon.svg"}
+var precached = []string{"style.css", "htmx.min.js", "app.js", "icon.svg"}
 
 // serviceWorker는 정적 파일의 해시를 VERSION으로, 미리 받을 주소를 PRECACHE로 채운 서비스 워커다.
 var serviceWorker = sync.OnceValue(func() []byte {

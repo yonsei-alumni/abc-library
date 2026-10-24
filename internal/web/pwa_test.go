@@ -77,6 +77,9 @@ func TestOfflinePage(t *testing.T) {
 
 func TestLayoutRegistersPWA(t *testing.T) {
 	_, body := get(t, &fakeStore{}, "/")
-	assertContains(t, body, `<link rel="manifest" href="/manifest.webmanifest">`, `register("/sw.js")`,
+	assertContains(t, body, `<link rel="manifest" href="/manifest.webmanifest">`, `<script src="`+staticURL("app.js")+`" defer>`,
 		`rel="apple-touch-icon" href="`+staticURL("apple-touch-icon.png")+`"`, `name="theme-color"`)
+	if code, body := get(t, &fakeStore{}, "/static/app.js"); code != http.StatusOK || !strings.Contains(body, `register("/sw.js")`) {
+		t.Errorf("app.js가 서비스 워커를 등록해야 한다: %d", code)
+	}
 }
