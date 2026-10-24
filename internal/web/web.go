@@ -176,6 +176,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /tags", s.tags)
 	mux.HandleFunc("GET /authors", s.authors)
 	s.adminRoutes(mux)
+	s.pwaRoutes(mux)
 	// Cloud Run 앞단의 Google Frontend가 정확히 /healthz만 가로채서 자체 404를 돌려주므로 /health도 연다.
 	health := func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) }
 	mux.HandleFunc("GET /healthz", health)

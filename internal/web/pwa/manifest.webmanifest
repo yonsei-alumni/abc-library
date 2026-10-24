@@ -1,0 +1,22 @@
+{
+  "id": "/",
+  "name": "ABC 도서관",
+  "short_name": "ABC 도서관",
+  "description": "아카라카북클럽(ABC)에서 함께 읽고 추천한 책",
+  "lang": "ko",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#faf7f1",
+  "theme_color": "#ffffff",
+  "icons": [
+    { "src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/static/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "책", "url": "/books" },
+    { "name": "태그", "url": "/tags" },
+    { "name": "저자", "url": "/authors" }
+  ]
+}

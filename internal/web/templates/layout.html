@@ -5,8 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{{.Title}} · ABC 도서관</title>
 <meta name="description" content="아카라카북클럽(ABC)에서 함께 읽고 추천한 책">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#212126" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-title" content="ABC 도서관">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="{{static "icon.svg"}}" type="image/svg+xml">
+<link rel="apple-touch-icon" href="{{static "apple-touch-icon.png"}}">
 <link rel="stylesheet" href="{{static "style.css"}}">
 <script src="{{static "htmx.min.js"}}" defer></script>
+<script>if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js");</script>
 </head>
 <body hx-boost="true">
 <header class="site-header">
