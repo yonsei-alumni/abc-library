@@ -68,10 +68,14 @@ func CleanCategory(c Category) (Category, error) {
 
 const base62 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
-// CodeLen은 공개 주소에 쓰는 코드의 길이다. 62^8(약 218조) 가지라서 짐작해서 찾을 수 없다.
-const CodeLen = 8
+// CodeLen은 새로 만드는 공개 주소 코드의 길이다. 62^3(238,328) 가지다.
+// 모든 주소를 차례로 열어 보면 공개한 카테고리를 찾을 수 있지만, 공개하지 않은 카테고리는 만든 사람에게만 보인다.
+const CodeLen = 3
 
-// NewCode는 공개 주소에 쓰는 임의의 base62 코드다. 번호를 바꾼 것이 아니라서 다른 카테고리의 주소를 짐작할 수 없다.
+// maxCodeLen은 받아들이는 코드의 최대 길이다. 처음에는 8자로 만들었으므로 그때 만든 주소도 받는다.
+const maxCodeLen = 8
+
+// NewCode는 공개 주소에 쓰는 임의의 base62 코드다. 번호를 바꾼 것이 아니라서 만든 순서로 주소를 짐작할 수 없다.
 func NewCode() string {
 	code := make([]byte, 0, CodeLen)
 	buf := make([]byte, CodeLen*2)
@@ -87,9 +91,9 @@ func NewCode() string {
 	return string(code)
 }
 
-// ValidCode는 s가 NewCode가 만들 수 있는 꼴인지 알려 준다.
+// ValidCode는 s가 공개 주소 코드의 꼴(base62 CodeLen~8자)인지 알려 준다.
 func ValidCode(s string) bool {
-	if len(s) != CodeLen {
+	if len(s) < CodeLen || len(s) > maxCodeLen {
 		return false
 	}
 	for i := range len(s) {

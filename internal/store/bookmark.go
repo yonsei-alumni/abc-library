@@ -150,8 +150,8 @@ func (s *Store) AddCategory(ctx context.Context, userID int64, c book.Category) 
 	if n >= book.MaxCategories {
 		return 0, ErrTooMany
 	}
-	// 코드가 다른 카테고리와 겹칠 확률은 아주 낮지만, 겹치면 다시 뽑는다.
-	for range 3 {
+	// 코드가 다른 카테고리와 겹치면 다시 뽑는다. 코드가 짧아서 카테고리가 많아지면 가끔 겹친다.
+	for range 10 {
 		row := &categoryRow{UserID: userID, Title: c.Title, Body: c.Body, PublicTitle: c.PublicTitle, Public: c.Public, Code: book.NewCode()}
 		_, err = s.db.NewInsert().Model(row).Returning("id").Exec(ctx)
 		if !isUniqueViolation(err) {

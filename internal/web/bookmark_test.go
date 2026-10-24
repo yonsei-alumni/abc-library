@@ -308,7 +308,7 @@ func TestCategoryPages(t *testing.T) {
 
 	body := a.get("/me/categories/100?done=category-added", me).Body.String()
 	assertContains(t, body, "카테고리를 만들었습니다.", `name="public_title"`, `name="body"`, "Markdown",
-		"https://abc-lib.web.app/s/"+code, "지금은 나에게만 보입니다", "밴드에서 책에 대한 글을 써주세요")
+		"https://abc-lib.web.app/shared/"+code, "지금은 나에게만 보입니다", "밴드에서 책에 대한 글을 써주세요")
 
 	form := url.Values{"title": {"올해의 SF"}, "body": {"# 소개\r\n좋아하는 책"}, "public_title": {"추천 SF"}, "public": {"1"}}
 	expectRedirect(t, a.post("/me/categories/100", form, me), "/me/categories/100?done=category-saved")
@@ -364,9 +364,9 @@ func TestMyBookmarksPage(t *testing.T) {
 	}
 	a.st.marks = map[[2]int64][]int64{{uid, 1}: {101, 102}}
 	body := a.get("/me", me).Body.String()
-	assertContains(t, body, "카테고리 2개", `href="/me/categories/101"`, "https://abc-lib.web.app/s/Ab3dE5gH", "비공개",
+	assertContains(t, body, "카테고리 2개", `href="/me/categories/101"`, "https://abc-lib.web.app/shared/Ab3dE5gH", "비공개",
 		"북마크 1권", "당신 인생의 이야기", "올해의 SF, 나중에 읽기", "계정 지우기")
-	if strings.Contains(body, "/s/Zz9yX8wV") {
+	if strings.Contains(body, "/shared/Zz9yX8wV") {
 		t.Error("공개하지 않은 카테고리의 주소가 목록에 보인다")
 	}
 }
@@ -380,7 +380,7 @@ func TestSharedCategory(t *testing.T) {
 		{ID: 102, UserID: uid, Title: "비공개", Code: "Zz9yX8wV"},
 	}
 
-	rec := a.get("/s/Ab3dE5gH")
+	rec := a.get("/shared/Ab3dE5gH")
 	body := rec.Body.String()
 	if rec.Code != http.StatusOK {
 		t.Fatalf("code = %d", rec.Code)
@@ -395,18 +395,18 @@ func TestSharedCategory(t *testing.T) {
 	}
 
 	// 공개하지 않은 카테고리는 만든 사람에게만 보인다.
-	if rec := a.get("/s/Zz9yX8wV"); rec.Code != http.StatusNotFound {
+	if rec := a.get("/shared/Zz9yX8wV"); rec.Code != http.StatusNotFound {
 		t.Errorf("비공개 카테고리 code = %d", rec.Code)
 	}
 	_, other := a.member("hash-other")
-	if rec := a.get("/s/Zz9yX8wV", other); rec.Code != http.StatusNotFound {
+	if rec := a.get("/shared/Zz9yX8wV", other); rec.Code != http.StatusNotFound {
 		t.Errorf("다른 사용자가 본 비공개 카테고리 code = %d", rec.Code)
 	}
-	rec = a.get("/s/Zz9yX8wV", me)
+	rec = a.get("/shared/Zz9yX8wV", me)
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "나에게만 보입니다") || !strings.Contains(rec.Body.String(), `href="/me/categories/102"`) {
 		t.Errorf("만든 사람이 본 비공개 카테고리 code = %d", rec.Code)
 	}
-	for _, path := range []string{"/s/AAAAAAAA", "/s/abc", "/s/Ab3dE5gH0", "/s/Ab3d-5gH"} {
+	for _, path := range []string{"/shared/AAAAAAAA", "/shared/abc", "/shared/ab", "/shared/Ab3dE5gH0", "/shared/Ab-", "/s/Ab3dE5gH"} {
 		if rec := a.get(path); rec.Code != http.StatusNotFound {
 			t.Errorf("%s: code = %d", path, rec.Code)
 		}

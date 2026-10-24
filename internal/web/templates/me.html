@@ -11,7 +11,7 @@
     <li>
       <a class="category-title" href="/me/categories/{{.ID}}">{{.Title}}</a>
       <span class="muted">책 {{.Books}}권</span>
-      {{if .Public}}<span class="badge">공개</span> <a class="share-link" href="/s/{{.Code}}">{{$.SiteURL}}/s/{{.Code}}</a>{{else}}<span class="badge badge-private">비공개</span>{{end}}
+      {{if .Public}}<span class="badge">공개</span> <a class="share-link" href="/shared/{{.Code}}">{{$.SiteURL}}/shared/{{.Code}}</a>{{else}}<span class="badge badge-private">비공개</span>{{end}}
     </li>
     {{end}}
   </ul>

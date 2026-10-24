@@ -12,7 +12,7 @@ import (
 )
 
 func (s *Server) bookmarkRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /s/{code}", s.shared)
+	mux.HandleFunc("GET /shared/{code}", s.shared)
 
 	user := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, s.requireUser(h)) }
 	user("GET /me", func(w http.ResponseWriter, r *http.Request) { s.renderMe(w, r, http.StatusOK, "") })
