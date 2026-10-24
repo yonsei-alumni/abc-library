@@ -6,6 +6,8 @@
 # API, Artifact Registry 저장소, 서비스 계정, Secret Manager 비밀, GitHub Actions용
 # Workload Identity Federation을 만든다. 이미 있는 리소스는 건너뛰므로 다시 실행해도 된다.
 # db-pwd, claude-api-key 비밀에 버전이 없으면 DB_PWD, CLAUDE_API_KEY 환경 변수 값을 첫 버전으로 올린다.
+# gcp-env.sh에 GOOGLE_CLIENT_ID가 있으면 관리자 로그인용 비밀도 만든다. google-client-secret은
+# GOOGLE_CLIENT_SECRET 환경 변수 값을 올리고, session-secret은 임의의 값을 만들어 올린다.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -79,6 +81,16 @@ if ! has_version "$BAND_STATE_SECRET"; then
   echo "  $BAND_STATE_SECRET: 버전이 없습니다. make band-secret으로 밴드 세션을 올리세요"
 fi
 
+if [[ -n "$GOOGLE_CLIENT_ID" ]]; then
+  secret_from_env "$GOOGLE_SECRET" GOOGLE_CLIENT_SECRET
+  create_secret "$SESSION_SECRET_NAME"
+  if ! has_version "$SESSION_SECRET_NAME"; then
+    # 값을 바꾸면 모든 관리자가 로그아웃된다.
+    openssl rand -base64 48 | tr -d '\n' | gcloud secrets versions add "$SESSION_SECRET_NAME" --project "$PROJECT" --data-file=- >/dev/null
+    echo "  $SESSION_SECRET_NAME: 임의의 값으로 첫 버전을 올렸습니다"
+  fi
+fi
+
 grant_secret() {
   gcloud secrets add-iam-policy-binding "$1" --project "$PROJECT" \
     --member "serviceAccount:$2" --role roles/secretmanager.secretAccessor --condition None >/dev/null
@@ -88,6 +100,10 @@ grant_secret "$DB_PWD_SECRET" "$WEB_SA"
 grant_secret "$DB_PWD_SECRET" "$BATCH_SA"
 grant_secret "$BAND_STATE_SECRET" "$BATCH_SA"
 grant_secret "$CLAUDE_KEY_SECRET" "$BATCH_SA"
+if [[ -n "$GOOGLE_CLIENT_ID" ]]; then
+  grant_secret "$GOOGLE_SECRET" "$WEB_SA"
+  grant_secret "$SESSION_SECRET_NAME" "$WEB_SA"
+fi
 
 echo "== GitHub Actions 배포 권한 =="
 gcloud iam workload-identity-pools describe "$WIF_POOL" --location global --project "$PROJECT" >/dev/null 2>&1 ||

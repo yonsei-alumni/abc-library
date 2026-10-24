@@ -10,7 +10,7 @@
 - 소식은 두 종류다.
   - 새 책: 처음 언급된 책이 등록됐다.
   - 이야기 추가: 이미 등록된 책이 다른 글이나 댓글에서 다시 언급됐다.
-- 각 항목에는 날짜, 표지, 제목, 저자를 넣고 책 상세로 연결한다.
+- 각 항목에는 날짜, 표지, 제목, 저자, 그 글이 책에 대해 한 이야기의 요약 앞부분(두 줄, 최대 120자)을 넣고 책 상세로 연결한다. 요약은 본문 언급이 있으면 그것을, 없으면 첫 댓글 언급을 쓴다.
 - 다음 페이지는 HTMX로 이어 붙인다.
 
 ### 책 목록
@@ -33,6 +33,21 @@
 - 태그 화면은 모임 주제를 정한 순서로 먼저 보여 주고, 그 밖의 태그를 책 수 순서로 보여 준다.
 - 저자 화면은 저자와 책 수를 보여 준다. 누르면 책 목록으로 거른다.
 
+### 관리
+
+관리자는 화면 아래쪽의 '관리자 로그인'으로 Google 계정에 로그인한다. 관리자 목록에 있는 계정만 들어갈 수 있고, 처음 관리자는 benelog@gmail.com이다. 로그인하면 위쪽 메뉴에 '관리'가 생기고 책 상세에 편집 링크가 붙는다.
+
+- 태그(`/admin/tags`): 태그를 더하고, 이름을 바꾸고, 순서를 옮기고, 지운다. 모임 주제는 맨 앞에, 갈래는 맨 뒤에 더한다. 이름을 바꾸거나 지우면 책에 붙은 태그도 함께 바뀐다.
+- 책(`/admin/books/{id}`): 제목, 저자, 출판사, ISBN, 교보문고 상품 번호, 태그를 고친다. 같은 책이 둘로 나뉘었으면 다른 책으로 합친다. 책이 아닌 것을 잘못 뽑았으면 언급을 모두 지워서 목록에서 뺀다.
+- 언급(`/admin/mentions/{id}`): 요약과 링크를 고치고, 다른 책으로 옮기고, 지운다.
+- 관리자(`/admin/admins`): 관리자를 메일 주소로 더하고 뺀다. 자기 자신과 마지막 관리자는 뺄 수 없다.
+
+관리자가 고친 내용은 배치가 같은 글을 다시 추출해도 남는다.
+
+- 고친 책의 정보와 태그는 배치가 바꾸지 않는다. 예전 제목과 ISBN은 같은 책을 찾는 키로 남아서 다시 추출한 결과도 그 책에 모인다.
+- 고친 언급은 지우지 않고, 같은 본문이나 댓글에서 같은 책에 대한 새 언급을 더하지 않는다.
+- 지우거나 옮긴 언급은 원래 책에 지운 언급으로 남아서 배치가 되살리지 않는다. 언급을 모두 지운 책은 목록에서 사라지고 관리자에게만 보인다. 다른 글에서 새로 언급되면 다시 나타난다.
+
 ## 일일 배치
 
 1. 밴드에서 지난 수집 이후 새로 올라온 글, 지난 실행에서 처리하지 못한 글, 최근 7일 사이 글 중 본문이 수정되거나 댓글이 달린 글을 읽는다. 접힌 이전 댓글은 펼쳐서 읽는다.
@@ -42,7 +57,7 @@
 3. 코드는 Claude의 결과를 검증하고 보탠다.
    - 교보문고 검색 결과에 없던 ISBN, 정해진 목록 밖의 태그, 없는 댓글 번호는 버린다.
    - 언급에 들어 있던 링크를 서점 구매 링크와 Claude가 그 책과 직접 관련이 없다고 판정한 링크(지도, 행사 안내, 그 책을 다루지 않은 기사 등)만 빼고 모두 붙인다. 본문이 책 한 권만 다뤘으면 본문 링크는 모두 그 책의 본문 언급에 붙이고, 여러 권을 다뤘으면 Claude가 고른 번호를 따른다. 댓글 링크는 그 댓글의 언급에 붙인다.
-4. 책과 언급을 저장한다. 수정된 글은 그 글의 언급을 새 결과로 바꾸고, 어느 언급에도 남지 않게 된 책은 지운다.
+4. 책과 언급을 저장한다. 수정된 글은 그 글의 언급을 새 결과로 바꾸고, 어느 언급에도 남지 않게 된 책은 지운다. 관리자가 고친 책과 언급은 그대로 둔다('관리' 참고).
 
 같은 게시글을 여러 번 처리해도 결과가 같아야 한다. 한 번에 추출하는 게시글 수에는 상한(기본 30)을 둔다.
 실행마다 `batch_runs`에 실행 전 마지막 글, 밴드 최신 글, 처리 건수, 오류를 남긴다. `make status`로 최근 실행과 다시 시도할 글을 본다.
@@ -50,14 +65,15 @@
 
 ## 태그
 
-- 책 한 권에 태그를 1~5개 단다.
-- 모임 주제 태그(`book.TopicTags`, 현재 AI, SF, 과학)는 책의 내용이 그 주제와 직접 관련되거나 그 주제의 모임 도서로 다룬 경우에 붙인다.
-- 갈래 태그(`book.KindTags`)는 소설, 인문, 역사 같은 책의 종류다.
+- 책 한 권에 태그를 1~5개 단다. 태그 목록은 `tags` 테이블에 있고 관리 화면에서 고친다. 배치는 실행할 때 이 목록을 읽어서 Claude에게 그 안에서만 고르게 한다.
+- 모임 주제 태그(`topic`, 처음 값은 AI, SF, 과학)는 책의 내용이 그 주제와 직접 관련되거나 그 주제의 모임 도서로 다룬 경우에 붙인다.
+- 갈래 태그(`kind`)는 소설, 인문, 역사 같은 책의 종류다.
 
 ## 책 식별
 
 - ISBN-13이 있으면 ISBN으로 같은 책을 찾는다.
 - 같은 작품의 다른 판본(양장본, 개정판 등)은 ISBN이 달라도 작품 키로 묶는다. 작품 키는 괄호 속 판본 표기와 부제를 뺀 제목에 대표 저자를 붙여 정규화한 값이다.
+- 책마다 같은 책을 찾는 키(작품 키와 ISBN)를 `book_keys`에 모은다. 다른 표기나 다른 판본 ISBN으로 찾은 키도 더하고, 관리자가 고치거나 합쳐도 예전 키를 남긴다.
 - ISBN을 확정하지 못한 책도 작품 키로 저장하고, 나중에 ISBN을 찾으면 채운다.
 
 ## 데이터 모델
@@ -65,9 +81,12 @@
 | 테이블 | 주요 컬럼 | 비고 |
 |---|---|---|
 | `posts` | `band_post_no`(유일), `posted_at`, `content_hash`, `processed_at` | 본문, 댓글, 작성자는 저장하지 않는다 |
-| `books` | `isbn13`(유일), `work_key`(유일), `title`, `authors`(배열), `publisher`, `kyobo_pid` | 표지 주소는 ISBN으로 만든다 |
-| `book_tags` | `book_id`, `tag` | 책 한 권에 태그 여러 개 |
-| `mentions` | `book_id`, `post_id`, `kind`(`post`/`comment`), `mentioned_at`, `summary`, `links`(JSON) | 책 상세의 언급 목록과 타임라인의 원천 |
+| `books` | `isbn13`(유일), `title`, `authors`(배열), `publisher`, `kyobo_pid`, `edited_at` | 표지 주소는 ISBN으로 만든다. `edited_at`이 있으면 관리자가 고친 책이다 |
+| `book_keys` | `key`(유일), `book_id` | 같은 책을 찾는 키. 작품 키와 `isbn:`을 붙인 ISBN |
+| `tags` | `name`(유일), `kind`(`topic`/`kind`), `position` | 붙일 수 있는 태그와 순서 |
+| `book_tags` | `book_id`, `tag` | 책 한 권에 태그 여러 개. 태그 이름을 바꾸거나 지우면 함께 바뀐다 |
+| `mentions` | `book_id`, `post_id`, `kind`(`post`/`comment`), `mentioned_at`, `summary`, `links`(JSON), `edited`, `hidden` | 책 상세의 언급 목록과 타임라인의 원천. `hidden`은 관리자가 지운 언급이다 |
+| `admins` | `email`(유일), `added_by` | 관리자의 Google 계정 메일 주소 |
 | `batch_runs` | `started_at`, `finished_at`, `last_post_no`, `latest_post_no`, 처리 건수, `error` | 배치 실행 기록 |
 | `pending_posts` | `band_post_no`, `reason`(`failed`/`missing`), `attempts`, `last_error` | 다음 실행에서 다시 시도할 글 |
 
@@ -78,7 +97,7 @@
 | 웹 서버 | Cloud Run, `asia-southeast1`(싱가포르). 공개 주소는 Firebase Hosting의 https://abc-lib.web.app이고, 모든 요청을 Cloud Run으로 넘긴다 |
 | DB | Neon 프로젝트 `abc-library`, `aws-ap-southeast-1`(싱가포르), Postgres 18, DB 이름 `abc_library` |
 | 일일 배치 | Cloud Run Job, `asia-northeast3`(서울). 밴드 세션이 한국 IP에서 쓰이게 한다. Cloud Scheduler로 하루 한 번 실행한다 |
-| 비밀 값 | Secret Manager(`DB_PWD`, 밴드 `storageState`, Claude API 키) |
+| 비밀 값 | Secret Manager(`DB_PWD`, 밴드 `storageState`, Claude API 키, Google OAuth 클라이언트 보안 비밀, 세션 서명 값) |
 | Claude 인증 | `CLAUDE_API_KEY`. 운영 배치는 Secret Manager의 `claude-api-key`. Workload Identity Federation은 코드만 준비되어 있다 |
 | 이미지 | Artifact Registry `abc-library` 저장소(웹은 `asia-southeast1`, 배치는 `asia-northeast3`). 최근 5개만 남긴다 |
 | 실행 일정 | Cloud Scheduler `abc-batch-daily`가 매일 03:00(KST)에 Job을 실행한다. Job이 실패하면 Cloud Monitoring이 메일을 보낸다 |
@@ -94,6 +113,10 @@
 | `BAND_NO` | 밴드 번호(기본 `102765569`) |
 | `BAND_STATE_PATH` | 밴드 로그인 세션 파일(기본 `band-state.json`) |
 | `PORT` | 웹 서버 포트(기본 `8080`) |
+| `GOOGLE_CLIENT_ID` | 관리자 로그인에 쓰는 Google OAuth 클라이언트 ID. 없으면 관리자 로그인을 쓰지 않는다 |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth 클라이언트 보안 비밀 |
+| `SESSION_SECRET` | 세션 쿠키 서명 값(32바이트 이상). 바꾸면 모든 관리자가 로그아웃된다 |
+| `SITE_URL` | 사이트 공개 주소(기본 `http://localhost:{PORT}`). 로그인 리디렉션 URI와 POST 요청의 출처 확인에 쓴다 |
 
 ## 배포
 
@@ -103,7 +126,7 @@ Google Cloud 프로젝트 `abc-library-512606`(이름 abc-library)에 배포한�
 |---|---|
 | 웹 서버 | Cloud Run 서비스 `abc-library`, 서비스 계정 `abc-web`, 최소 인스턴스 0, 공개 접근 |
 | 일일 배치 | Cloud Run Job `abc-batch`, 서비스 계정 `abc-batch`, 2 vCPU, 2GiB, 제한 시간 1시간, 재시도 없음 |
-| 비밀 값 | `db-pwd`(웹, 배치), `band-state`(배치, `/secrets/band/band-state.json`에 파일로 올림), `claude-api-key`(배치) |
+| 비밀 값 | `db-pwd`(웹, 배치), `band-state`(배치, `/secrets/band/band-state.json`에 파일로 올림), `claude-api-key`(배치), `google-client-secret`, `session-secret`(웹) |
 | 실행 계정 | `abc-scheduler`(Job 실행), `abc-deployer`(GitHub Actions 배포) |
 
 처음 한 번은 `.envrc`를 읽은 셸에서 다음 순서로 실행한다. 모두 다시 실행해도 된다.
@@ -123,4 +146,18 @@ make firebase-hosting           # https://abc-lib.web.app을 웹 서비스에 �
 - 밴드 세션이 만료되면 Job이 실패하고 알림 메일이 온다. `make band-login` 뒤에 `make band-secret`을 실행한다. Job은 비밀의 최신 버전을 읽으므로 다시 배포하지 않아도 된다.
 - Claude API 키를 바꾸려면 `gcloud secrets versions add claude-api-key --data-file=-`로 새 버전을 올린다.
 - 웹 서버는 `robots.txt`와 `X-Robots-Tag: noindex`로 검색엔진 수집을 막는다.
+- 웹 서버는 마이그레이션을 적용하지 않는다. 스키마를 바꾼 코드를 push하기 전에 `make migrate`로 운영 DB에 먼저 적용한다. 그렇지 않으면 배포된 웹 서버가 다음 배치 실행까지 오류를 낸다.
+
+### 관리자 로그인 설정
+
+Google OAuth 클라이언트는 콘솔에서 사람이 한 번 만든다.
+
+1. Google Cloud 콘솔의 **Google 인증 플랫폼**에서 `abc-library-512606` 프로젝트를 고른다.
+2. **브랜딩**: 앱 이름(ABC 도서관), 사용자 지원 이메일, 승인된 도메인 `web.app`을 넣는다.
+3. **대상**: 사용자 유형을 외부로 두고 앱을 게시한다(범위가 `openid`, `email`뿐이라 검증이 필요 없다).
+4. **클라이언트**: 웹 애플리케이션 클라이언트를 만들고, 승인된 리디렉션 URI에 `https://abc-lib.web.app/auth/callback`(로컬에서도 쓰려면 `http://localhost:8080/auth/callback`)을 넣는다.
+5. 나온 클라이언트 ID를 `scripts/gcp-env.sh`의 `GOOGLE_CLIENT_ID`에 넣는다.
+6. `GOOGLE_CLIENT_SECRET=<보안 비밀> make gcp-setup`으로 `google-client-secret`과 `session-secret` 비밀을 만들고 `make deploy-web`을 실행한다.
+
+그 뒤 GitHub Actions 배포도 같은 값을 쓴다. `GOOGLE_CLIENT_ID`를 비우고 배포하면 관리자 로그인 없이 뜬다.
 - Cloud Run 앞단의 Google Frontend가 정확히 `/healthz`를 가로채므로 상태 확인은 `/health`로 한다.

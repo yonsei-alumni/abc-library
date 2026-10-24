@@ -3,40 +3,10 @@ package book
 
 import (
 	"regexp"
-	"slices"
 	"strings"
 	"time"
 	"unicode"
 )
-
-// TopicTags는 매달 모임에서 정한 주제다. 새 주제가 정해지면 맨 앞에 더한다.
-var TopicTags = []string{"AI", "SF", "과학"}
-
-// KindTags는 책의 갈래를 나타내는 태그다.
-var KindTags = []string{
-	"소설", "추리·미스터리", "판타지", "시", "에세이",
-	"인문", "철학", "역사", "사회·정치", "경제·경영", "자기계발",
-	"기술·IT", "예술", "여행", "종교", "어린이·청소년", "만화",
-}
-
-// Tags는 책에 붙일 수 있는 모든 태그다. 추출할 때 이 목록에서만 고르게 한다.
-var Tags = slices.Concat(TopicTags, KindTags)
-
-// SortTags는 태그를 Tags의 순서(모임 주제가 먼저)로 정렬한다. 목록에 없는 태그는 뒤에 둔다.
-func SortTags(tags []string) []string {
-	sorted := slices.Clone(tags)
-	slices.SortStableFunc(sorted, func(a, b string) int {
-		return rank(a) - rank(b)
-	})
-	return sorted
-}
-
-func rank(tag string) int {
-	if i := slices.Index(Tags, tag); i >= 0 {
-		return i
-	}
-	return len(Tags)
-}
 
 // Book은 책 한 권이다. 같은 작품의 판본은 하나의 Book으로 묶는다. 태그는 여러 개 붙는다.
 type Book struct {
@@ -68,6 +38,9 @@ const (
 // Mention은 게시글 본문이나 댓글 하나가 책에 대해 한 이야기를 개인 정보를 빼고 요약한 것이다.
 // 책 상세 화면에 댓글처럼 쌓인다.
 type Mention struct {
+	// ID와 BookID는 저장된 언급에만 있다. 관리 화면에서 언급을 고칠 때 쓴다.
+	ID      int64
+	BookID  int64
 	PostNo  int
 	Kind    MentionKind
 	At      time.Time
@@ -125,11 +98,13 @@ type Shelved struct {
 }
 
 // Entry는 타임라인의 소식 하나다. IsNew가 참이면 이 게시글로 책이 처음 등록됐다는 뜻이다.
+// Summary는 그 글이 책에 대해 한 이야기의 요약이다. 본문 언급이 있으면 그것을, 없으면 첫 댓글 언급을 쓴다.
 type Entry struct {
 	Book     Book
 	PostNo   int
 	PostedAt time.Time
 	IsNew    bool
+	Summary  string
 }
 
 // Count는 태그나 저자별 책 수다.
@@ -164,6 +139,16 @@ func normalize(s string, dropSubtitle bool) string {
 		}
 	}
 	return b.String()
+}
+
+// CleanISBN은 ISBN 사이의 하이픈과 공백을 뺀다.
+func CleanISBN(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '-' || unicode.IsSpace(r) {
+			return -1
+		}
+		return r
+	}, s)
 }
 
 // ValidISBN13은 s가 체크섬까지 맞는 ISBN-13인지 검사한다.

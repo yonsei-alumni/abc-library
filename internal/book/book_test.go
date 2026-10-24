@@ -55,21 +55,44 @@ func TestThreadsGroupsMentionsByPost(t *testing.T) {
 	}
 }
 
-func TestSortTagsPutsTopicsFirst(t *testing.T) {
-	got := SortTags([]string{"역사", "목록에 없는 태그", "과학", "AI", "소설"})
-	want := []string{"AI", "과학", "소설", "역사", "목록에 없는 태그"}
-	if strings.Join(got, ",") != strings.Join(want, ",") {
-		t.Errorf("SortTags = %v, want %v", got, want)
+func TestTagList(t *testing.T) {
+	tags := TagList{{"AI", TopicTag}, {"SF", TopicTag}, {"소설", KindTag}}
+	if got := strings.Join(tags.Names(), ","); got != "AI,SF,소설" {
+		t.Errorf("Names = %s", got)
+	}
+	if got := strings.Join(tags.Topics(), ","); got != "AI,SF" {
+		t.Errorf("Topics = %s", got)
+	}
+	if !tags.Has("소설") || tags.Has("역사") {
+		t.Error("Has가 목록을 따라야 한다")
+	}
+	if !tags.IsTopic("SF") || tags.IsTopic("소설") || tags.IsTopic("없는 태그") {
+		t.Error("IsTopic은 모임 주제에만 참이어야 한다")
+	}
+	if TagList(nil).Topics() != nil || len(TagList(nil).Names()) != 0 {
+		t.Error("빈 목록은 빈 결과여야 한다")
 	}
 }
 
-func TestTagsHaveNoDuplicates(t *testing.T) {
-	seen := map[string]bool{}
-	for _, tag := range Tags {
-		if seen[tag] {
-			t.Errorf("태그 %q가 중복된다", tag)
+func TestCleanTagName(t *testing.T) {
+	for in, want := range map[string]string{
+		" 기후 ": "기후", "#SF": "SF", "# 우주": "우주", "추리·미스터리": "추리·미스터리",
+		strings.Repeat("가", 20): strings.Repeat("가", 20),
+	} {
+		if got, err := CleanTagName(in); err != nil || got != want {
+			t.Errorf("CleanTagName(%q) = %q, %v", in, got, err)
 		}
-		seen[tag] = true
+	}
+	for _, in := range []string{"", "  ", "#", "##", strings.Repeat("가", 21), "AI,SF", "C#", "줄\n바꿈"} {
+		if got, err := CleanTagName(in); err == nil {
+			t.Errorf("CleanTagName(%q) = %q, 오류여야 한다", in, got)
+		}
+	}
+}
+
+func TestCleanISBN(t *testing.T) {
+	if got := CleanISBN(" 979-11-969148-0-6 "); got != "9791196914806" {
+		t.Errorf("CleanISBN = %q", got)
 	}
 }
 

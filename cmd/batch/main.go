@@ -8,6 +8,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -139,7 +140,15 @@ func run(ctx context.Context, log *slog.Logger, args []string) error {
 	}
 	defer func() { _ = crawler.Close() }()
 
-	ex := extract.New(&client.Beta.Messages, kyobo.NewClient())
+	// 태그는 관리 화면에서 고친 DB의 목록에서만 고른다.
+	tags, err := st.Tags(ctx)
+	if err != nil {
+		return err
+	}
+	if len(tags) == 0 {
+		return errors.New("태그 목록이 비어 있습니다. 관리 화면에서 태그를 더하세요")
+	}
+	ex := extract.New(&client.Beta.Messages, kyobo.NewClient(), tags)
 	_, err = pipeline.Run(ctx, crawler, ex, st, pipeline.Options{Limit: *limit, RecheckDays: *recheckDays, RedoFrom: *redoFrom, RedoPosts: redoList}, log)
 	return err
 }

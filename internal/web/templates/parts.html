@@ -1,5 +1,14 @@
 {{define "cover"}}{{$src := cover .}}{{if $src}}<img class="cover" src="{{$src}}" alt="{{.Title}} 표지" loading="lazy" referrerpolicy="no-referrer">{{else}}<span class="cover cover-blank" aria-hidden="true">{{.Title}}</span>{{end}}{{end}}
 
-{{define "tag-list"}}{{if .}}<ul class="tags">{{range .}}<li><a class="{{if isTopic .}}tag-topic{{end}}" href="/books?tag={{.}}">#{{.}}</a></li>{{end}}</ul>{{end}}{{end}}
+{{define "tag-list"}}{{if .}}<ul class="tags">{{range .}}<li><a class="{{if .Topic}}tag-topic{{end}}" href="/books?tag={{.Name}}">#{{.Name}}</a></li>{{end}}</ul>{{end}}{{end}}
+
+{{define "admin-nav"}}
+<nav class="admin-nav" aria-label="관리 메뉴">
+  <a href="/admin/tags" {{if eq .AdminNav "tags"}}aria-current="page"{{end}}>태그</a>
+  <a href="/admin/admins" {{if eq .AdminNav "admins"}}aria-current="page"{{end}}>관리자</a>
+</nav>
+{{end}}
+
+{{define "admin-notice"}}{{with .Notice}}<p class="notice" role="status">{{.}}</p>{{end}}{{with .Error}}<p class="notice notice-error" role="alert">{{.}}</p>{{end}}{{end}}
 
 {{define "links"}}{{if .}}<ul class="links">{{range .}}<li><a href="{{.URL}}" target="_blank" rel="noopener nofollow">{{.Title}}</a></li>{{end}}</ul>{{end}}{{end}}

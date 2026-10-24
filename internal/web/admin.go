@@ -1,0 +1,681 @@
+package web
+
+import (
+	"context"
+	"crypto/subtle"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/mail"
+	"net/url"
+	"strconv"
+	"strings"
+	"time"
+	"unicode/utf8"
+
+	"github.com/yonsei-alumni/abc-library/internal/auth"
+	"github.com/yonsei-alumni/abc-library/internal/book"
+	"github.com/yonsei-alumni/abc-library/internal/store"
+)
+
+const (
+	sessionTTL = 30 * 24 * time.Hour
+	loginTTL   = 10 * time.Minute
+	maxForm    = 64 << 10
+	maxSummary = 3000
+)
+
+type adminKey struct{}
+
+// adminEmail은 요청한 사람이 관리자이면 그 메일 주소를, 아니면 빈 문자열을 돌려준다.
+func adminEmail(r *http.Request) string {
+	email, _ := r.Context().Value(adminKey{}).(string)
+	return email
+}
+
+// withAdmin은 세션 쿠키의 계정이 관리자이면 요청에 그 메일 주소를 싣는다.
+// 관리자 목록은 요청마다 DB에서 확인하므로, 관리자에서 빼면 바로 권한이 없어진다.
+func (s *Server) withAdmin(next http.Handler) http.Handler {
+	if s.sessions == nil {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if sess, ok := s.sessions.Read(r); ok && sess.Email != "" {
+			// 로그인한 사람에게 보인 화면은 Firebase Hosting이나 브라우저가 캐시하지 않게 한다.
+			w.Header().Set("Cache-Control", "private, no-store")
+			admin, err := s.store.IsAdmin(r.Context(), sess.Email)
+			if err != nil {
+				s.log.Error("관리자인지 확인하지 못했다", "오류", err)
+			}
+			if admin {
+				r = r.WithContext(context.WithValue(r.Context(), adminKey{}, sess.Email))
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+// requireAdmin은 관리자만 h를 쓰게 한다. 로그인하지 않았으면 GET 요청은 로그인 화면으로 보낸다.
+func (s *Server) requireAdmin(h http.HandlerFunc) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "private, no-store")
+		switch {
+		case s.login == nil:
+			s.status(w, r, http.StatusNotFound, "찾을 수 없습니다", "관리자 로그인이 설정되지 않았습니다.")
+		case adminEmail(r) != "":
+			r.Body = http.MaxBytesReader(w, r.Body, maxForm)
+			h(w, r)
+		case r.Method == http.MethodGet:
+			http.Redirect(w, r, "/login?next="+url.QueryEscape(r.URL.RequestURI()), http.StatusSeeOther)
+		default:
+			s.status(w, r, http.StatusForbidden, "권한이 없습니다", "관리자만 할 수 있습니다.")
+		}
+	})
+}
+
+func (s *Server) adminRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /login", s.loginStart)
+	mux.HandleFunc("GET /auth/callback", s.loginCallback)
+	mux.HandleFunc("POST /logout", s.logout)
+
+	admin := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, s.requireAdmin(h)) }
+	admin("GET /admin", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/admin/tags", http.StatusSeeOther)
+	})
+	admin("GET /admin/tags", func(w http.ResponseWriter, r *http.Request) { s.renderTags(w, r, http.StatusOK, "") })
+	admin("POST /admin/tags", s.addTag)
+	admin("POST /admin/tags/rename", s.renameTag)
+	admin("POST /admin/tags/move", s.moveTag)
+	admin("POST /admin/tags/delete", s.deleteTag)
+	admin("GET /admin/books/{id}", s.adminBook)
+	admin("POST /admin/books/{id}", s.saveBook)
+	admin("POST /admin/books/{id}/merge", s.mergeBook)
+	admin("POST /admin/books/{id}/delete", s.deleteBook)
+	admin("GET /admin/mentions/{id}", s.adminMention)
+	admin("POST /admin/mentions/{id}", s.saveMention)
+	admin("POST /admin/mentions/{id}/move", s.moveMention)
+	admin("POST /admin/mentions/{id}/delete", s.deleteMention)
+	admin("GET /admin/admins", func(w http.ResponseWriter, r *http.Request) { s.renderAdmins(w, r, http.StatusOK, "") })
+	admin("POST /admin/admins", s.addAdmin)
+	admin("POST /admin/admins/delete", s.deleteAdmin)
+}
+
+// safeNext는 로그인한 뒤 돌아갈 경로다. 다른 사이트로 가는 주소는 받지 않는다.
+func safeNext(next string) string {
+	if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") || strings.HasPrefix(next, "/\\") {
+		return "/"
+	}
+	return next
+}
+
+func (s *Server) loginStart(w http.ResponseWriter, r *http.Request) {
+	if s.login == nil {
+		s.status(w, r, http.StatusNotFound, "찾을 수 없습니다", "관리자 로그인이 설정되지 않았습니다.")
+		return
+	}
+	next := safeNext(r.URL.Query().Get("next"))
+	if adminEmail(r) != "" {
+		http.Redirect(w, r, next, http.StatusSeeOther)
+		return
+	}
+	state := auth.NewState()
+	s.sessions.Set(w, auth.Session{State: state, Next: next}, loginTTL)
+	w.Header().Set("Cache-Control", "no-store")
+	http.Redirect(w, r, s.login.AuthCodeURL(state), http.StatusFound)
+}
+
+func (s *Server) loginCallback(w http.ResponseWriter, r *http.Request) {
+	if s.login == nil {
+		s.status(w, r, http.StatusNotFound, "찾을 수 없습니다", "관리자 로그인이 설정되지 않았습니다.")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	q := r.URL.Query()
+	if q.Get("error") != "" {
+		s.status(w, r, http.StatusBadRequest, "로그인하지 못했습니다", "Google 로그인을 취소했습니다.")
+		return
+	}
+	sess, ok := s.sessions.Read(r)
+	if !ok || sess.State == "" || subtle.ConstantTimeCompare([]byte(sess.State), []byte(q.Get("state"))) != 1 {
+		s.status(w, r, http.StatusBadRequest, "로그인하지 못했습니다", "로그인 요청이 만료되었습니다. 다시 시도해 주세요.")
+		return
+	}
+	email, err := s.login.Exchange(r.Context(), q.Get("code"))
+	if err != nil {
+		s.log.Warn("Google 로그인을 확인하지 못했다", "오류", err)
+		s.status(w, r, http.StatusBadRequest, "로그인하지 못했습니다", "Google 로그인을 확인하지 못했습니다. 다시 시도해 주세요.")
+		return
+	}
+	admin, err := s.store.IsAdmin(r.Context(), email)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if !admin {
+		s.sessions.Clear(w)
+		s.status(w, r, http.StatusForbidden, "권한이 없습니다", "관리자로 등록되지 않은 계정입니다.")
+		return
+	}
+	s.sessions.Set(w, auth.Session{Email: email}, sessionTTL)
+	http.Redirect(w, r, safeNext(sess.Next), http.StatusSeeOther)
+}
+
+func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
+	if s.sessions != nil {
+		s.sessions.Clear(w)
+	}
+	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+// notices는 관리 화면에서 고친 뒤 돌아온 화면에 보여 줄 안내다. 주소의 done 값으로 고른다.
+var notices = map[string]string{
+	"tag-added":       "태그를 더했습니다.",
+	"tag-renamed":     "태그 이름을 바꿨습니다. 책에 붙은 태그도 함께 바뀌었습니다.",
+	"tag-moved":       "태그 순서를 바꿨습니다.",
+	"tag-deleted":     "태그를 지웠습니다. 책에 붙은 태그도 함께 빠졌습니다.",
+	"book-saved":      "책 정보를 저장했습니다.",
+	"book-merged":     "책을 합쳤습니다.",
+	"book-deleted":    "책의 언급을 모두 지웠습니다. 이 책은 목록에서 사라지고 관리자에게만 보입니다.",
+	"mention-saved":   "언급을 저장했습니다.",
+	"mention-moved":   "언급을 이 책으로 옮겼습니다.",
+	"mention-deleted": "언급을 지웠습니다.",
+	"admin-added":     "관리자를 더했습니다.",
+	"admin-deleted":   "관리자를 지웠습니다.",
+}
+
+func (s *Server) renderAdmin(w http.ResponseWriter, r *http.Request, code int, page string, data map[string]any) {
+	data["Nav"] = "admin"
+	data["Notice"] = notices[r.URL.Query().Get("done")]
+	if _, ok := data["AdminNav"]; !ok {
+		data["AdminNav"] = ""
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(code)
+	s.render(w, r, page, "layout", data)
+}
+
+func done(w http.ResponseWriter, r *http.Request, path, notice string) {
+	http.Redirect(w, r, path+"?done="+notice, http.StatusSeeOther)
+}
+
+// 태그
+
+type tagRow struct {
+	Name  string
+	Books int
+}
+
+type tagGroup struct {
+	Title string
+	Tags  []tagRow
+}
+
+func kindName(k book.TagKind) string {
+	if k == book.TopicTag {
+		return "모임 주제"
+	}
+	return "책의 갈래"
+}
+
+func (s *Server) renderTags(w http.ResponseWriter, r *http.Request, code int, errMsg string) {
+	tags, err := s.store.Tags(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	counts, err := s.store.TagCounts(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	books := map[string]int{}
+	for _, c := range counts {
+		books[c.Name] = c.Books
+	}
+	groups := []tagGroup{{Title: kindName(book.TopicTag)}, {Title: kindName(book.KindTag)}}
+	for _, t := range tags {
+		i := 1
+		if t.Kind == book.TopicTag {
+			i = 0
+		}
+		groups[i].Tags = append(groups[i].Tags, tagRow{Name: t.Name, Books: books[t.Name]})
+	}
+	s.renderAdmin(w, r, code, "admin-tags", map[string]any{
+		"Title": "태그 관리", "AdminNav": "tags", "Groups": groups, "Error": errMsg,
+	})
+}
+
+func tagError(err error) (int, string) {
+	switch {
+	case errors.Is(err, store.ErrConflict):
+		return http.StatusConflict, "같은 이름의 태그가 이미 있습니다."
+	case errors.Is(err, store.ErrNotFound):
+		return http.StatusNotFound, "없는 태그입니다."
+	}
+	return 0, ""
+}
+
+// tagAction은 태그를 고친 결과에 따라 오류를 보이거나 태그 화면으로 돌아간다.
+func (s *Server) tagAction(w http.ResponseWriter, r *http.Request, err error, notice string) {
+	if code, msg := tagError(err); code != 0 {
+		s.renderTags(w, r, code, msg)
+		return
+	}
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	done(w, r, "/admin/tags", notice)
+}
+
+func (s *Server) addTag(w http.ResponseWriter, r *http.Request) {
+	name, err := book.CleanTagName(r.PostFormValue("name"))
+	if err != nil {
+		s.renderTags(w, r, http.StatusBadRequest, err.Error()+".")
+		return
+	}
+	kind := book.TagKind(r.PostFormValue("kind"))
+	if kind != book.TopicTag && kind != book.KindTag {
+		s.renderTags(w, r, http.StatusBadRequest, "태그 갈래를 골라 주세요.")
+		return
+	}
+	s.tagAction(w, r, s.store.AddTag(r.Context(), book.Tag{Name: name, Kind: kind}), "tag-added")
+}
+
+func (s *Server) renameTag(w http.ResponseWriter, r *http.Request) {
+	name, err := book.CleanTagName(r.PostFormValue("new_name"))
+	if err != nil {
+		s.renderTags(w, r, http.StatusBadRequest, err.Error()+".")
+		return
+	}
+	s.tagAction(w, r, s.store.RenameTag(r.Context(), r.PostFormValue("name"), name), "tag-renamed")
+}
+
+func (s *Server) moveTag(w http.ResponseWriter, r *http.Request) {
+	s.tagAction(w, r, s.store.MoveTag(r.Context(), r.PostFormValue("name"), r.PostFormValue("dir") == "up"), "tag-moved")
+}
+
+func (s *Server) deleteTag(w http.ResponseWriter, r *http.Request) {
+	s.tagAction(w, r, s.store.DeleteTag(r.Context(), r.PostFormValue("name")), "tag-deleted")
+}
+
+// 책
+
+type tagOption struct {
+	Name    string
+	Checked bool
+}
+
+type bookForm struct {
+	Book    book.Book
+	Error   string
+	DupID   int64
+	MergeTo string
+}
+
+func pathID(r *http.Request) (int64, bool) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	return id, err == nil && id > 0
+}
+
+func (s *Server) adminBook(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(r)
+	if !ok {
+		s.notFound(w, r)
+		return
+	}
+	b, _, err := s.store.Book(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		s.notFound(w, r)
+		return
+	}
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.renderBook(w, r, http.StatusOK, bookForm{Book: b})
+}
+
+// renderBook은 책 편집 화면을 그린다. 입력에 오류가 있으면 고친 값을 그대로 두고 오류를 보인다.
+func (s *Server) renderBook(w http.ResponseWriter, r *http.Request, code int, f bookForm) {
+	stored, mentions, err := s.store.Book(r.Context(), f.Book.ID)
+	if errors.Is(err, store.ErrNotFound) {
+		s.notFound(w, r)
+		return
+	}
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	tags, err := s.store.Tags(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	checked := map[string]bool{}
+	for _, t := range f.Book.Tags {
+		checked[t] = true
+	}
+	var topics, kinds []tagOption
+	for _, t := range tags {
+		opt := tagOption{Name: t.Name, Checked: checked[t.Name]}
+		if t.Kind == book.TopicTag {
+			topics = append(topics, opt)
+		} else {
+			kinds = append(kinds, opt)
+		}
+	}
+	s.renderAdmin(w, r, code, "admin-book", map[string]any{
+		"Title": stored.Title + " 편집", "Stored": stored, "Form": f, "Topics": topics, "Kinds": kinds,
+		"Mentions": mentions, "Error": f.Error,
+	})
+}
+
+func splitAuthors(s string) []string {
+	var authors []string
+	for _, a := range strings.Split(s, ",") {
+		if a = strings.TrimSpace(a); a != "" {
+			authors = append(authors, a)
+		}
+	}
+	return authors
+}
+
+func (s *Server) saveBook(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(r)
+	if !ok {
+		s.notFound(w, r)
+		return
+	}
+	b := book.Book{
+		ID:        id,
+		Title:     strings.TrimSpace(r.PostFormValue("title")),
+		Authors:   splitAuthors(r.PostFormValue("authors")),
+		Publisher: strings.TrimSpace(r.PostFormValue("publisher")),
+		ISBN13:    book.CleanISBN(r.PostFormValue("isbn13")),
+		KyoboPID:  strings.TrimSpace(r.PostFormValue("kyobo_pid")),
+		Tags:      r.PostForm["tag"],
+	}
+	f := bookForm{Book: b}
+	switch {
+	case b.Title == "":
+		f.Error = "제목을 입력해 주세요."
+	case b.ISBN13 != "" && !book.ValidISBN13(b.ISBN13):
+		f.Error = "ISBN-13이 올바르지 않습니다. 978이나 979로 시작하는 13자리 숫자를 입력해 주세요."
+	}
+	if f.Error != "" {
+		s.renderBook(w, r, http.StatusBadRequest, f)
+		return
+	}
+	err := s.store.UpdateBook(r.Context(), b)
+	var dup *store.DuplicateError
+	switch {
+	case errors.As(err, &dup):
+		f.Error, f.DupID = "같은 ISBN이나 같은 제목과 대표 저자의 책이 이미 있습니다. 같은 책이면 아래에서 그 책으로 합쳐 주세요.", dup.BookID
+		f.MergeTo = strconv.FormatInt(dup.BookID, 10)
+		s.renderBook(w, r, http.StatusConflict, f)
+	case errors.Is(err, store.ErrNotFound):
+		s.notFound(w, r)
+	case err != nil:
+		s.fail(w, r, err)
+	default:
+		done(w, r, fmt.Sprintf("/admin/books/%d", id), "book-saved")
+	}
+}
+
+func formID(r *http.Request, name string) (int64, bool) {
+	id, err := strconv.ParseInt(strings.TrimSpace(r.PostFormValue(name)), 10, 64)
+	return id, err == nil && id > 0
+}
+
+func (s *Server) mergeBook(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(r)
+	if !ok {
+		s.notFound(w, r)
+		return
+	}
+	stored, _, err := s.store.Book(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		s.notFound(w, r)
+		return
+	}
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	f := bookForm{Book: stored, MergeTo: r.PostFormValue("into")}
+	into, ok := formID(r, "into")
+	switch {
+	case !ok:
+		f.Error = "합칠 책의 번호를 입력해 주세요."
+	case into == id:
+		f.Error = "같은 책끼리는 합칠 수 없습니다."
+	}
+	if f.Error != "" {
+		s.renderBook(w, r, http.StatusBadRequest, f)
+		return
+	}
+	err = s.store.MergeBook(r.Context(), id, into)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		f.Error = fmt.Sprintf("%d번 책이 없습니다.", into)
+		s.renderBook(w, r, http.StatusNotFound, f)
+	case err != nil:
+		s.fail(w, r, err)
+	default:
+		done(w, r, fmt.Sprintf("/admin/books/%d", into), "book-merged")
+	}
+}
+
+func (s *Server) deleteBook(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(r)
+	if !ok {
+		s.notFound(w, r)
+		return
+	}
+	err := s.store.DeleteBook(r.Context(), id)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		s.notFound(w, r)
+	case err != nil:
+		s.fail(w, r, err)
+	default:
+		done(w, r, fmt.Sprintf("/admin/books/%d", id), "book-deleted")
+	}
+}
+
+// 언급
+
+type mentionForm struct {
+	Summary string
+	Links   string
+	MoveTo  string
+}
+
+// formatLinks는 링크를 한 줄에 하나씩 '주소 제목' 꼴로 적는다.
+func formatLinks(links []book.Link) string {
+	var b strings.Builder
+	for _, l := range links {
+		b.WriteString(l.URL)
+		if l.Title != "" {
+			b.WriteString(" " + l.Title)
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// parseLinks는 한 줄에 하나씩 '주소 제목' 꼴로 적은 링크를 읽는다. 제목이 없으면 주소의 호스트를 제목으로 쓴다.
+func parseLinks(s string) ([]book.Link, error) {
+	var links []book.Link
+	for i, line := range strings.Split(s, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		raw, title, _ := strings.Cut(line, " ")
+		u, err := url.Parse(raw)
+		if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+			return nil, fmt.Errorf("%d번째 줄의 링크 주소가 올바르지 않습니다. http나 https로 시작해야 합니다", i+1)
+		}
+		title = strings.TrimSpace(title)
+		if title == "" {
+			title = u.Host
+		}
+		links = append(links, book.Link{URL: raw, Title: title})
+	}
+	return links, nil
+}
+
+// mention은 경로의 언급을 읽는다. 없으면 404 화면을 그리고 ok가 거짓이다.
+func (s *Server) mention(w http.ResponseWriter, r *http.Request) (book.Mention, bool) {
+	id, ok := pathID(r)
+	if !ok {
+		s.notFound(w, r)
+		return book.Mention{}, false
+	}
+	m, err := s.store.Mention(r.Context(), id)
+	if errors.Is(err, store.ErrNotFound) {
+		s.notFound(w, r)
+		return book.Mention{}, false
+	}
+	if err != nil {
+		s.fail(w, r, err)
+		return book.Mention{}, false
+	}
+	return m, true
+}
+
+func (s *Server) adminMention(w http.ResponseWriter, r *http.Request) {
+	m, ok := s.mention(w, r)
+	if !ok {
+		return
+	}
+	s.renderMention(w, r, http.StatusOK, m, mentionForm{Summary: m.Summary, Links: formatLinks(m.Links)}, "")
+}
+
+func (s *Server) renderMention(w http.ResponseWriter, r *http.Request, code int, m book.Mention, f mentionForm, errMsg string) {
+	b, _, err := s.store.Book(r.Context(), m.BookID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.renderAdmin(w, r, code, "admin-mention", map[string]any{
+		"Title": "언급 편집", "Book": b, "Mention": m, "Form": f, "Error": errMsg,
+	})
+}
+
+func (s *Server) saveMention(w http.ResponseWriter, r *http.Request) {
+	m, ok := s.mention(w, r)
+	if !ok {
+		return
+	}
+	f := mentionForm{Summary: strings.TrimSpace(strings.ReplaceAll(r.PostFormValue("summary"), "\r\n", "\n")), Links: r.PostFormValue("links")}
+	links, err := parseLinks(strings.ReplaceAll(f.Links, "\r\n", "\n"))
+	switch {
+	case f.Summary == "":
+		err = errors.New("요약을 입력해 주세요")
+	case utf8.RuneCountInString(f.Summary) > maxSummary:
+		err = fmt.Errorf("요약은 %d자까지 쓸 수 있습니다", maxSummary)
+	}
+	if err != nil {
+		s.renderMention(w, r, http.StatusBadRequest, m, f, err.Error()+".")
+		return
+	}
+	if err := s.store.UpdateMention(r.Context(), m.ID, f.Summary, links); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	done(w, r, fmt.Sprintf("/admin/books/%d", m.BookID), "mention-saved")
+}
+
+func (s *Server) moveMention(w http.ResponseWriter, r *http.Request) {
+	m, ok := s.mention(w, r)
+	if !ok {
+		return
+	}
+	f := mentionForm{Summary: m.Summary, Links: formatLinks(m.Links), MoveTo: r.PostFormValue("book")}
+	to, ok := formID(r, "book")
+	if !ok {
+		s.renderMention(w, r, http.StatusBadRequest, m, f, "옮길 책의 번호를 입력해 주세요.")
+		return
+	}
+	err := s.store.MoveMention(r.Context(), m.ID, to)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		s.renderMention(w, r, http.StatusNotFound, m, f, fmt.Sprintf("%d번 책이 없습니다.", to))
+	case err != nil:
+		s.fail(w, r, err)
+	default:
+		done(w, r, fmt.Sprintf("/admin/books/%d", to), "mention-moved")
+	}
+}
+
+func (s *Server) deleteMention(w http.ResponseWriter, r *http.Request) {
+	m, ok := s.mention(w, r)
+	if !ok {
+		return
+	}
+	if err := s.store.DeleteMention(r.Context(), m.ID); err != nil && !errors.Is(err, store.ErrNotFound) {
+		s.fail(w, r, err)
+		return
+	}
+	done(w, r, fmt.Sprintf("/admin/books/%d", m.BookID), "mention-deleted")
+}
+
+// 관리자
+
+func (s *Server) renderAdmins(w http.ResponseWriter, r *http.Request, code int, errMsg string) {
+	admins, err := s.store.Admins(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	s.renderAdmin(w, r, code, "admin-admins", map[string]any{
+		"Title": "관리자", "AdminNav": "admins", "Admins": admins, "Error": errMsg,
+	})
+}
+
+// cleanEmail은 메일 주소 하나만 받아서 소문자로 바꾼다. 이름이 붙은 주소('이름 <주소>')는 받지 않는다.
+func cleanEmail(s string) (string, error) {
+	s = strings.TrimSpace(s)
+	addr, err := mail.ParseAddress(s)
+	if err != nil || addr.Address != s {
+		return "", errors.New("메일 주소가 올바르지 않습니다")
+	}
+	return strings.ToLower(s), nil
+}
+
+func (s *Server) addAdmin(w http.ResponseWriter, r *http.Request) {
+	email, err := cleanEmail(r.PostFormValue("email"))
+	if err != nil {
+		s.renderAdmins(w, r, http.StatusBadRequest, err.Error()+".")
+		return
+	}
+	err = s.store.AddAdmin(r.Context(), email, adminEmail(r))
+	switch {
+	case errors.Is(err, store.ErrConflict):
+		s.renderAdmins(w, r, http.StatusConflict, "이미 관리자입니다.")
+	case err != nil:
+		s.fail(w, r, err)
+	default:
+		done(w, r, "/admin/admins", "admin-added")
+	}
+}
+
+func (s *Server) deleteAdmin(w http.ResponseWriter, r *http.Request) {
+	email := strings.ToLower(strings.TrimSpace(r.PostFormValue("email")))
+	if email == strings.ToLower(adminEmail(r)) {
+		s.renderAdmins(w, r, http.StatusBadRequest, "자기 자신은 관리자에서 뺄 수 없습니다.")
+		return
+	}
+	err := s.store.DeleteAdmin(r.Context(), email)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		s.renderAdmins(w, r, http.StatusNotFound, "없는 관리자입니다.")
+	case err != nil:
+		s.fail(w, r, err)
+	default:
+		done(w, r, "/admin/admins", "admin-deleted")
+	}
+}

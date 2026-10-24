@@ -14,6 +14,11 @@ REPO=abc-library
 WEB_SERVICE=abc-library
 # Firebase Hosting 사이트. https://abc-lib.web.app이 웹 서비스로 요청을 넘긴다.
 FIREBASE_SITE=abc-lib
+SITE_URL=https://abc-lib.web.app
+
+# 관리자 로그인에 쓰는 Google OAuth 클라이언트 ID. 비밀이 아니다(로그인 화면 주소에 그대로 나온다).
+# 비워 두면 웹 서버가 관리자 로그인을 쓰지 않는다. 만드는 절차는 docs/spec.md의 '관리자 로그인 설정'에 있다.
+GOOGLE_CLIENT_ID=""
 BATCH_JOB=abc-batch
 SCHEDULER_JOB=abc-batch-daily
 
@@ -27,6 +32,9 @@ DB_PWD_SECRET=db-pwd
 BAND_STATE_SECRET=band-state
 # 배치가 Claude를 부를 때 쓰는 API 키. Workload Identity Federation으로 바꾸면 쓰지 않는다.
 CLAUDE_KEY_SECRET=claude-api-key
+# 관리자 로그인(Google OAuth 클라이언트 보안 비밀)과 세션 쿠키 서명에 쓰는 비밀. 웹 서버만 읽는다.
+GOOGLE_SECRET=google-client-secret
+SESSION_SECRET_NAME=session-secret
 # 배치 Job에서 band-state 비밀을 파일로 올리는 경로
 BAND_STATE_MOUNT=/secrets/band/band-state.json
 

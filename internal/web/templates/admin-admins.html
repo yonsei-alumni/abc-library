@@ -1,0 +1,40 @@
+{{define "content"}}
+<div class="admin" hx-boost="false">
+<h1 class="page-title">관리자</h1>
+{{template "admin-nav" .}}
+{{template "admin-notice" .}}
+
+<section class="admin-section">
+  <h2>관리자 더하기</h2>
+  <form class="admin-row" method="post" action="/admin/admins">
+    <input type="email" name="email" required placeholder="Google 계정 메일 주소" aria-label="메일 주소">
+    <button class="button">더하기</button>
+  </form>
+  <p class="hint">그 Google 계정으로 로그인하면 태그, 책, 언급을 고칠 수 있고 관리자를 더하거나 뺄 수 있습니다.</p>
+</section>
+
+<section class="admin-section">
+  <h2>관리자 {{len .Admins}}명</h2>
+  <table class="admin-table">
+    <thead><tr><th>메일 주소</th><th>더한 사람</th><th>더한 날</th><th><span class="sr-only">빼기</span></th></tr></thead>
+    <tbody>
+    {{range .Admins}}
+    <tr>
+      <td>{{.Email}}{{if eq .Email $.Admin}} <span class="muted">(나)</span>{{end}}</td>
+      <td>{{with .AddedBy}}{{.}}{{else}}<span class="muted">처음 설정</span>{{end}}</td>
+      <td class="nowrap">{{isoDate .CreatedAt}}</td>
+      <td>
+        {{if ne .Email $.Admin}}
+        <form class="inline" method="post" action="/admin/admins/delete" onsubmit="return confirm({{printf "%s 계정을 관리자에서 뺄까요?" .Email}})">
+          <input type="hidden" name="email" value="{{.Email}}">
+          <button class="button button-danger">빼기</button>
+        </form>
+        {{end}}
+      </td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
+</section>
+</div>
+{{end}}

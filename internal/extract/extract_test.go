@@ -17,6 +17,19 @@ import (
 	"github.com/yonsei-alumni/abc-library/internal/kyobo"
 )
 
+// testTags는 처음 DB에 넣은 태그 목록과 같다.
+var testTags = func() book.TagList {
+	tags := book.TagList{{Name: "AI", Kind: book.TopicTag}, {Name: "SF", Kind: book.TopicTag}, {Name: "과학", Kind: book.TopicTag}}
+	for _, name := range []string{
+		"소설", "추리·미스터리", "판타지", "시", "에세이",
+		"인문", "철학", "역사", "사회·정치", "경제·경영", "자기계발",
+		"기술·IT", "예술", "여행", "종교", "어린이·청소년", "만화",
+	} {
+		tags = append(tags, book.Tag{Name: name, Kind: book.KindTag})
+	}
+	return tags
+}()
+
 type fakeAPI struct {
 	responses []string
 	calls     []anthropic.BetaMessageNewParams
@@ -109,7 +122,7 @@ func TestExtractBuildsMentionsAndAttachesLinks(t *testing.T) {
 	}}
 	search := &fakeSearch{}
 
-	got, err := New(api, search).Extract(context.Background(), input)
+	got, err := New(api, search, testTags).Extract(context.Background(), input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,7 +167,7 @@ func TestExtractUsesChosenLinksWhenPostCoversSeveralBooks(t *testing.T) {
 		found("숨", "", []string{"SF"}, "요약", []int{2}),
 	}}
 	api := &fakeAPI{responses: []string{message("end_turn", textBlock(final))}}
-	got, err := New(api, &fakeSearch{}).Extract(context.Background(), input)
+	got, err := New(api, &fakeSearch{}, testTags).Extract(context.Background(), input)
 	if err != nil || len(got) != 2 {
 		t.Fatalf("got %+v, %v", got, err)
 	}
@@ -180,7 +193,7 @@ func TestExtractDropsUnrelatedLinks(t *testing.T) {
 	breath["unrelated_links"] = []int{5, 8}
 	api := &fakeAPI{responses: []string{message("end_turn", textBlock(m{"books": []m{story, breath}}))}}
 
-	got, err := New(api, &fakeSearch{}).Extract(context.Background(), in)
+	got, err := New(api, &fakeSearch{}, testTags).Extract(context.Background(), in)
 	if err != nil || len(got) != 2 {
 		t.Fatalf("got %+v, %v", got, err)
 	}
@@ -206,7 +219,7 @@ func TestExtractDropsUnrelatedLinks(t *testing.T) {
 
 func TestExtractRequest(t *testing.T) {
 	api := &fakeAPI{responses: []string{message("end_turn", textBlock(m{"books": []any{}}))}}
-	got, err := New(api, &fakeSearch{}).Extract(context.Background(), input)
+	got, err := New(api, &fakeSearch{}, testTags).Extract(context.Background(), input)
 	if err != nil || len(got) != 0 {
 		t.Fatalf("got %+v, %v", got, err)
 	}
@@ -219,7 +232,7 @@ func TestExtractRequest(t *testing.T) {
 		`"model":"claude-opus-5-5"`, `"effort":"medium"`, `"type":"json_schema"`, `"fallbacks":"default"`,
 		`"name":"search_kyobo"`, `"strict":true`, `"media_type":"image/jpeg"`, `게시일: 2026-10-21`,
 		`[3] 리뷰 https://blog.example.com/review`, `[1] (2026-10-21) 같은 작가의 '숨'도 좋아요`,
-		`링크 [5]  https://www.youtube.com/watch?v=abc`, `링크 [6] 알라딘 https://www.aladin.co.kr`, `[4]  https://bookshelf.example.com/숨/`, `[2] (2026-10-21) 다음 모임 언제예요?`, `"enum":["AI","SF","과학"`,
+		`링크 [5]  https://www.youtube.com/watch?v=abc`, `링크 [6] 알라딘 https://www.aladin.co.kr`, `[4]  https://bookshelf.example.com/숨/`, `[2] (2026-10-21) 다음 모임 언제예요?`, `"enum":["AI","SF","과학"`, `모임 주제 태그(AI, SF, 과학)`,
 	} {
 		if !strings.Contains(req, want) {
 			t.Errorf("요청에 %s가 없다", want)
@@ -229,7 +242,7 @@ func TestExtractRequest(t *testing.T) {
 
 func TestExtractRefusal(t *testing.T) {
 	api := &fakeAPI{responses: []string{message("refusal")}}
-	if _, err := New(api, &fakeSearch{}).Extract(context.Background(), input); !errors.Is(err, ErrRefused) {
+	if _, err := New(api, &fakeSearch{}, testTags).Extract(context.Background(), input); !errors.Is(err, ErrRefused) {
 		t.Errorf("err = %v, want ErrRefused", err)
 	}
 }
@@ -239,7 +252,7 @@ func TestExtractStopsAfterTooManyToolCalls(t *testing.T) {
 	for range maxTurns + 1 {
 		responses = append(responses, message("tool_use", `{"type":"tool_use","id":"tu","name":"search_kyobo","input":{"query":"q"}}`))
 	}
-	if _, err := New(&fakeAPI{responses: responses}, &fakeSearch{}).Extract(context.Background(), input); err == nil {
+	if _, err := New(&fakeAPI{responses: responses}, &fakeSearch{}, testTags).Extract(context.Background(), input); err == nil {
 		t.Error("도구 호출이 끝없이 이어지면 오류여야 한다")
 	}
 }
@@ -251,8 +264,28 @@ func TestTagsDropScienceFromSF(t *testing.T) {
 		{[]string{"SF", "SF", "없는 태그", "AI", "소설", "철학", "역사", "인문"}, []string{"SF", "AI", "소설", "철학", "역사"}},
 		{nil, nil},
 	} {
-		if got := tags(tt.in); !slices.Equal(got, tt.want) {
+		if got := pickTags(tt.in, testTags); !slices.Equal(got, tt.want) {
 			t.Errorf("tags(%v) = %v, want %v", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestExtractUsesGivenTags(t *testing.T) {
+	// 관리 화면에서 더한 모임 주제가 프롬프트와 스키마에 들어가고, 목록에 없는 태그는 버린다.
+	tags := book.TagList{{Name: "기후", Kind: book.TopicTag}, {Name: "AI", Kind: book.TopicTag}, {Name: "인문", Kind: book.KindTag}}
+	final := m{"books": []m{found("무수면 사회", "", []string{"기후", "소설", "인문"}, "요약", nil)}}
+	api := &fakeAPI{responses: []string{message("end_turn", textBlock(final))}}
+	got, err := New(api, &fakeSearch{}, tags).Extract(context.Background(), input)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+	if strings.Join(got[0].Book.Tags, ",") != "기후,인문" {
+		t.Errorf("태그 = %v", got[0].Book.Tags)
+	}
+	body, _ := json.Marshal(api.calls[0])
+	for _, want := range []string{`"enum":["기후","AI","인문"]`, `모임 주제 태그(기후, AI)`} {
+		if !strings.Contains(string(body), want) {
+			t.Errorf("요청에 %s가 없다", want)
 		}
 	}
 }

@@ -85,7 +85,6 @@ type bookRow struct {
 
 	ID        int64     `bun:",pk,autoincrement"`
 	ISBN13    string    `bun:"isbn13,nullzero"`
-	WorkKey   string    `bun:",notnull"`
 	Title     string    `bun:",notnull"`
 	Authors   []string  `bun:",array"`
 	Publisher string    `bun:",notnull"`
@@ -107,14 +106,18 @@ type bookView struct {
 func (v bookView) toBook() book.Book {
 	return book.Book{
 		ID: v.ID, ISBN13: v.ISBN13, Title: v.Title, Authors: v.Authors,
-		Publisher: v.Publisher, KyoboPID: v.KyoboPID, Tags: book.SortTags(v.Tags),
+		Publisher: v.Publisher, KyoboPID: v.KyoboPID, Tags: v.Tags,
 	}
 }
 
 // bookColumns는 bookView로 읽을 책 컬럼이다. 테이블 별칭은 b다.
+// 태그는 태그 목록의 순서(모임 주제가 먼저)로 늘어놓는다.
 const bookColumns = `b.id, coalesce(b.isbn13, '') AS isbn13, b.title, b.authors, b.publisher,
 	coalesce(b.kyobo_pid, '') AS kyobo_pid,
-	ARRAY(SELECT t.tag FROM book_tags t WHERE t.book_id = b.id) AS tags`
+	ARRAY(SELECT t.tag FROM book_tags t JOIN tags g ON g.name = t.tag WHERE t.book_id = b.id ` + tagOrder + `) AS tags`
+
+// tagOrder는 tags 테이블(별칭 g)의 태그를 정해진 순서로 늘어놓는다.
+const tagOrder = `ORDER BY g.kind = 'topic' DESC, g.position, g.name`
 
 type mentionRow struct {
 	bun.BaseModel `bun:"table:mentions"`
@@ -126,6 +129,13 @@ type mentionRow struct {
 	MentionedAt time.Time        `bun:",notnull"`
 	Summary     string           `bun:",notnull"`
 	Links       []book.Link      `bun:",type:jsonb,notnull"`
+	Edited      bool             `bun:",notnull"`
+	Hidden      bool             `bun:",notnull"`
+}
+
+// sourceKey는 언급의 출처(본문이나 댓글 하나)와 책을 가리키는 키다. 같은 출처는 언급 시각이 같다.
+func sourceKey(bookID int64, kind book.MentionKind, at time.Time) string {
+	return fmt.Sprintf("%d|%s|%d", bookID, kind, at.UnixMicro())
 }
 
 // LastPostNo는 저장된 게시글 번호 중 가장 큰 값이다. 저장된 글이 없으면 0이다.
@@ -153,7 +163,8 @@ func (s *Store) PostNosSince(ctx context.Context, since time.Time) ([]int, error
 }
 
 // SavePost는 게시글과 그 글(본문과 댓글)에서 찾은 책을 저장한다.
-// 같은 글을 다시 저장하면 그 글의 언급을 새 결과로 바꾼다.
+// 같은 글을 다시 저장하면 그 글의 언급을 새 결과로 바꾼다. 관리자가 고치거나 지운 언급은 그대로 두고,
+// 같은 본문이나 댓글에서 같은 책에 대한 새 언급은 더하지 않는다.
 func (s *Store) SavePost(ctx context.Context, p book.Post, findings []book.Finding) error {
 	return s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		row := &postRow{BandPostNo: p.No, PostedAt: p.PostedAt, ContentHash: p.ContentHash, ProcessedAt: time.Now()}
@@ -171,14 +182,23 @@ func (s *Store) SavePost(ctx context.Context, p book.Post, findings []book.Findi
 		}
 
 		var oldBookIDs []int64
-		_, err = tx.NewDelete().Model((*mentionRow)(nil)).Where("post_id = ?", row.ID).Returning("book_id").Exec(ctx, &oldBookIDs)
+		_, err = tx.NewDelete().Model((*mentionRow)(nil)).Where("post_id = ?", row.ID).Where("NOT edited").
+			Returning("book_id").Exec(ctx, &oldBookIDs)
 		if err != nil {
 			return err
 		}
 
 		// 추출 결과의 책 두 개가 ISBN이나 정규화한 제목으로 DB의 같은 책에 묶일 수 있다.
 		// 그때 같은 본문 언급이나 같은 댓글 언급이 한 책에 두 번 붙지 않게 한다.
+		// 관리자가 고치거나 지운 언급도 이미 붙은 것으로 본다.
+		var kept []mentionRow
+		if err := tx.NewSelect().Model(&kept).Column("book_id", "kind", "mentioned_at").Where("post_id = ?", row.ID).Scan(ctx); err != nil {
+			return err
+		}
 		saved := map[string]bool{}
+		for _, k := range kept {
+			saved[sourceKey(k.BookID, k.Kind, k.MentionedAt)] = true
+		}
 		for _, f := range findings {
 			if len(f.Mentions) == 0 {
 				continue
@@ -188,7 +208,7 @@ func (s *Store) SavePost(ctx context.Context, p book.Post, findings []book.Findi
 				return fmt.Errorf("게시글 %d의 책 %q 저장: %w", p.No, f.Book.Title, err)
 			}
 			for _, m := range f.Mentions {
-				key := fmt.Sprintf("%d|%s|%d", bookID, m.Kind, m.At.UnixNano())
+				key := sourceKey(bookID, m.Kind, m.At)
 				if saved[key] {
 					continue
 				}
@@ -217,34 +237,41 @@ func (s *Store) SavePost(ctx context.Context, p book.Post, findings []book.Findi
 	})
 }
 
-// upsertBook은 ISBN이나 작품 키가 같은 책을 찾아서 빠진 정보와 태그를 더하고, 없으면 새로 만든다.
+// upsertBook은 같은 책 키(ISBN이나 작품 키)를 가진 책을 찾아서 빠진 정보와 태그를 더하고, 없으면 새로 만든다.
+// 관리자가 고친 책은 정보와 태그를 바꾸지 않는다. 어느 경우든 이 책의 키를 더해서 다음에도 같은 책을 찾게 한다.
 func upsertBook(ctx context.Context, tx bun.Tx, b book.Book) (int64, error) {
-	key := book.WorkKey(b.Title, b.Authors)
-	var existing bookRow
-	q := tx.NewSelect().Model(&existing)
-	if b.ISBN13 != "" {
-		q = q.Where("isbn13 = ? OR work_key = ?", b.ISBN13, key).OrderExpr("isbn13 = ? DESC NULLS LAST", b.ISBN13)
-	} else {
-		q = q.Where("work_key = ?", key)
+	keys := bookKeys(b)
+	var found []struct {
+		ID     int64 `bun:"id"`
+		Edited bool  `bun:"edited"`
 	}
-	err := q.Limit(1).Scan(ctx)
+	// ISBN이 맞는 책을 작품 키만 맞는 책보다 먼저 고른다.
+	err := tx.NewRaw(`
+		SELECT b.id, b.edited_at IS NOT NULL AS edited
+		FROM books b JOIN book_keys k ON k.book_id = b.id
+		WHERE k.key IN (?)
+		ORDER BY k.key LIKE 'isbn:%' DESC, b.id
+		LIMIT 1`, bun.List(keys)).Scan(ctx, &found)
+	if err != nil {
+		return 0, err
+	}
 
 	var id int64
 	switch {
-	case errors.Is(err, sql.ErrNoRows):
+	case len(found) == 0:
 		authors := b.Authors
 		if authors == nil {
 			authors = []string{}
 		}
-		row := &bookRow{ISBN13: b.ISBN13, WorkKey: key, Title: b.Title, Authors: authors, Publisher: b.Publisher, KyoboPID: b.KyoboPID}
+		row := &bookRow{ISBN13: b.ISBN13, Title: b.Title, Authors: authors, Publisher: b.Publisher, KyoboPID: b.KyoboPID}
 		if _, err := tx.NewInsert().Model(row).Returning("id").Exec(ctx); err != nil {
 			return 0, err
 		}
 		id = row.ID
-	case err != nil:
-		return 0, err
+	case found[0].Edited:
+		return found[0].ID, addKeys(ctx, tx, found[0].ID, keys)
 	default:
-		id = existing.ID
+		id = found[0].ID
 		_, err = tx.NewUpdate().Model((*bookRow)(nil)).
 			Set("isbn13 = coalesce(isbn13, nullif(?, ''))", b.ISBN13).
 			Set("kyobo_pid = coalesce(kyobo_pid, nullif(?, ''))", b.KyoboPID).
@@ -257,12 +284,36 @@ func upsertBook(ctx context.Context, tx bun.Tx, b book.Book) (int64, error) {
 		}
 	}
 
+	// 추출하는 동안 관리자가 지운 태그는 건너뛴다.
 	for _, tag := range b.Tags {
-		if _, err := tx.NewRaw("INSERT INTO book_tags (book_id, tag) VALUES (?, ?) ON CONFLICT DO NOTHING", id, tag).Exec(ctx); err != nil {
+		if _, err := tx.NewRaw("INSERT INTO book_tags (book_id, tag) SELECT ?, name FROM tags WHERE name = ? ON CONFLICT DO NOTHING", id, tag).Exec(ctx); err != nil {
 			return 0, err
 		}
 	}
-	return id, nil
+	return id, addKeys(ctx, tx, id, keys)
+}
+
+// bookKeys는 배치가 같은 책을 찾는 키다. 작품 키와, ISBN이 있으면 'isbn:'을 붙인 ISBN이다.
+func bookKeys(b book.Book) []string {
+	keys := []string{book.WorkKey(b.Title, b.Authors)}
+	if b.ISBN13 != "" {
+		keys = append(keys, isbnKey(b.ISBN13))
+	}
+	return keys
+}
+
+func isbnKey(isbn string) string {
+	return "isbn:" + isbn
+}
+
+// addKeys는 책에 키를 더한다. 다른 책이 이미 가진 키는 그대로 둔다.
+func addKeys(ctx context.Context, db bun.IDB, bookID int64, keys []string) error {
+	for _, key := range keys {
+		if _, err := db.NewRaw("INSERT INTO book_keys (key, book_id) VALUES (?, ?) ON CONFLICT DO NOTHING", key, bookID).Exec(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 type entryRow struct {
@@ -270,6 +321,7 @@ type entryRow struct {
 	BandPostNo int       `bun:"band_post_no"`
 	PostedAt   time.Time `bun:"posted_at"`
 	IsNew      bool      `bun:"is_new"`
+	Summary    string    `bun:"summary"`
 }
 
 // Timeline은 최근 소식을 시각의 역순으로 돌려준다. 같은 글에서 같은 책을 여러 번 다뤘으면 소식 하나로 묶는다.
@@ -277,11 +329,13 @@ func (s *Store) Timeline(ctx context.Context, limit, offset int) ([]book.Entry, 
 	var rows []entryRow
 	err := s.db.NewRaw(`
 		WITH news AS (
-			SELECT m.book_id, p.band_post_no, min(m.mentioned_at) AS posted_at
+			SELECT m.book_id, p.band_post_no, min(m.mentioned_at) AS posted_at,
+			       (array_agg(m.summary ORDER BY m.kind = 'post' DESC, m.mentioned_at, m.id))[1] AS summary
 			FROM mentions m JOIN posts p ON p.id = m.post_id
+			WHERE NOT m.hidden
 			GROUP BY m.book_id, p.band_post_no
 		)
-		SELECT `+bookColumns+`, n.band_post_no, n.posted_at,
+		SELECT `+bookColumns+`, n.band_post_no, n.posted_at, n.summary,
 		       n.posted_at = min(n.posted_at) OVER (PARTITION BY n.book_id) AS is_new
 		FROM news n JOIN books b ON b.id = n.book_id
 		ORDER BY n.posted_at DESC, b.id
@@ -291,7 +345,7 @@ func (s *Store) Timeline(ctx context.Context, limit, offset int) ([]book.Entry, 
 	}
 	entries := make([]book.Entry, len(rows))
 	for i, r := range rows {
-		entries[i] = book.Entry{Book: r.toBook(), PostNo: r.BandPostNo, PostedAt: r.PostedAt, IsNew: r.IsNew}
+		entries[i] = book.Entry{Book: r.toBook(), PostNo: r.BandPostNo, PostedAt: r.PostedAt, IsNew: r.IsNew, Summary: r.Summary}
 	}
 	return entries, nil
 }
@@ -317,7 +371,7 @@ func (s *Store) Books(ctx context.Context, f Filter, limit, offset int) ([]book.
 	err := s.db.NewRaw(`
 		SELECT `+bookColumns+`, max(m.mentioned_at) AS last_posted_at, count(DISTINCT m.post_id) AS post_count
 		FROM books b
-		JOIN mentions m ON m.book_id = b.id
+		JOIN mentions m ON m.book_id = b.id AND NOT m.hidden
 		WHERE (? = '' OR EXISTS (SELECT 1 FROM book_tags t WHERE t.book_id = b.id AND t.tag = ?))
 		  AND (? = '' OR ? = ANY (b.authors))
 		  AND (? = '%%' OR squash(b.title) LIKE ?
@@ -355,6 +409,8 @@ func likePattern(q string) string {
 }
 
 type mentionView struct {
+	ID          int64            `bun:"id"`
+	BookID      int64            `bun:"book_id"`
 	BandPostNo  int              `bun:"band_post_no"`
 	Kind        book.MentionKind `bun:"kind"`
 	MentionedAt time.Time        `bun:"mentioned_at"`
@@ -362,7 +418,8 @@ type mentionView struct {
 	Links       []book.Link      `bun:"links,type:jsonb"`
 }
 
-// Book은 책 한 권과, 그 책에 대한 언급을 오래된 순서로 돌려준다.
+// Book은 책 한 권과, 그 책에 대한 언급을 오래된 순서로 돌려준다. 관리자가 지운 언급은 빼고,
+// 언급이 모두 지워진 책도 돌려준다.
 func (s *Store) Book(ctx context.Context, id int64) (book.Book, []book.Mention, error) {
 	var views []bookView
 	if err := s.db.NewRaw(`SELECT `+bookColumns+` FROM books b WHERE b.id = ?`, id).Scan(ctx, &views); err != nil {
@@ -373,19 +430,26 @@ func (s *Store) Book(ctx context.Context, id int64) (book.Book, []book.Mention, 
 	}
 	var rows []mentionView
 	err := s.db.NewRaw(`
-		SELECT p.band_post_no, m.kind, m.mentioned_at, m.summary, m.links
+		SELECT `+mentionColumns+`
 		FROM mentions m
 		JOIN posts p ON p.id = m.post_id
-		WHERE m.book_id = ?
+		WHERE m.book_id = ? AND NOT m.hidden
 		ORDER BY m.mentioned_at, m.id`, id).Scan(ctx, &rows)
 	if err != nil {
 		return book.Book{}, nil, err
 	}
 	mentions := make([]book.Mention, len(rows))
 	for i, r := range rows {
-		mentions[i] = book.Mention{PostNo: r.BandPostNo, Kind: r.Kind, At: r.MentionedAt, Summary: r.Summary, Links: r.Links}
+		mentions[i] = r.toMention()
 	}
 	return views[0].toBook(), mentions, nil
+}
+
+// mentionColumns는 mentionView로 읽을 언급 컬럼이다. 언급의 별칭은 m, 게시글의 별칭은 p다.
+const mentionColumns = `m.id, m.book_id, p.band_post_no, m.kind, m.mentioned_at, m.summary, m.links`
+
+func (r mentionView) toMention() book.Mention {
+	return book.Mention{ID: r.ID, BookID: r.BookID, PostNo: r.BandPostNo, Kind: r.Kind, At: r.MentionedAt, Summary: r.Summary, Links: r.Links}
 }
 
 // TagCounts는 태그별 책 수다.
@@ -393,7 +457,7 @@ func (s *Store) TagCounts(ctx context.Context) ([]book.Count, error) {
 	return s.counts(ctx, `
 		SELECT t.tag AS name, count(*) AS books
 		FROM book_tags t
-		WHERE EXISTS (SELECT 1 FROM mentions m WHERE m.book_id = t.book_id)
+		WHERE EXISTS (SELECT 1 FROM mentions m WHERE m.book_id = t.book_id AND NOT m.hidden)
 		GROUP BY t.tag
 		ORDER BY books DESC, name`)
 }
@@ -403,7 +467,7 @@ func (s *Store) AuthorCounts(ctx context.Context) ([]book.Count, error) {
 	return s.counts(ctx, `
 		SELECT a AS name, count(*) AS books
 		FROM books b, unnest(b.authors) AS a
-		WHERE EXISTS (SELECT 1 FROM mentions m WHERE m.book_id = b.id)
+		WHERE EXISTS (SELECT 1 FROM mentions m WHERE m.book_id = b.id AND NOT m.hidden)
 		GROUP BY a
 		ORDER BY books DESC, name`)
 }

@@ -120,6 +120,10 @@ func TestSavePostAndQueries(t *testing.T) {
 	if len(entries) != 2 || entries[0].PostNo != 2 || entries[0].IsNew || !entries[1].IsNew || !entries[1].PostedAt.Equal(day(1)) {
 		t.Errorf("타임라인 = %+v", entries)
 	}
+	// 소식의 요약은 본문 언급이 있으면 그것을, 댓글만 있으면 첫 댓글 언급을 쓴다.
+	if len(entries) == 2 && (entries[0].Summary != "두 번째 글의 댓글" || entries[1].Summary != "본문 요약") {
+		t.Errorf("소식 요약 = %q, %q", entries[0].Summary, entries[1].Summary)
+	}
 
 	if no, err := s.LastPostNo(ctx); err != nil || no != 2 {
 		t.Errorf("LastPostNo = %d, %v", no, err)

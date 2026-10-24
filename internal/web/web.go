@@ -14,7 +14,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
+	"github.com/yonsei-alumni/abc-library/internal/auth"
 	"github.com/yonsei-alumni/abc-library/internal/band"
 	"github.com/yonsei-alumni/abc-library/internal/book"
 	"github.com/yonsei-alumni/abc-library/internal/kyobo"
@@ -29,26 +31,68 @@ var staticFiles embed.FS
 
 const pageSize = 24
 
-// Store는 화면에 필요한 조회다. *store.Store가 구현한다.
+// Store는 화면에 필요한 조회와 관리 화면의 수정이다. *store.Store가 구현한다.
 type Store interface {
 	Timeline(ctx context.Context, limit, offset int) ([]book.Entry, error)
 	Books(ctx context.Context, f store.Filter, limit, offset int) ([]book.Shelved, error)
 	Book(ctx context.Context, id int64) (book.Book, []book.Mention, error)
 	TagCounts(ctx context.Context) ([]book.Count, error)
 	AuthorCounts(ctx context.Context) ([]book.Count, error)
+	Tags(ctx context.Context) (book.TagList, error)
+
+	AddTag(ctx context.Context, t book.Tag) error
+	RenameTag(ctx context.Context, old, name string) error
+	MoveTag(ctx context.Context, name string, up bool) error
+	DeleteTag(ctx context.Context, name string) error
+	UpdateBook(ctx context.Context, b book.Book) error
+	MergeBook(ctx context.Context, from, into int64) error
+	DeleteBook(ctx context.Context, id int64) error
+	Mention(ctx context.Context, id int64) (book.Mention, error)
+	UpdateMention(ctx context.Context, id int64, summary string, links []book.Link) error
+	MoveMention(ctx context.Context, id, toBook int64) error
+	DeleteMention(ctx context.Context, id int64) error
+	Admins(ctx context.Context) ([]store.Admin, error)
+	IsAdmin(ctx context.Context, email string) (bool, error)
+	AddAdmin(ctx context.Context, email, addedBy string) error
+	DeleteAdmin(ctx context.Context, email string) error
+}
+
+// Login은 Google 계정 로그인이다. *auth.Google이 구현한다.
+type Login interface {
+	AuthCodeURL(state string) string
+	Exchange(ctx context.Context, code string) (email string, err error)
+}
+
+// Config는 Server의 설정이다.
+type Config struct {
+	BandNo string
+	// Login과 Sessions가 nil이면 관리자 로그인을 쓰지 않는다.
+	Login    Login
+	Sessions *auth.Sessions
+	// SiteURL은 사이트의 공개 주소다. 다른 사이트에서 보낸 POST 요청을 막을 때 이 주소는 믿는다.
+	SiteURL string
 }
 
 // Server는 웹 화면이다.
 type Server struct {
-	store  Store
-	bandNo string
-	log    *slog.Logger
-	pages  map[string]*template.Template
+	store    Store
+	bandNo   string
+	login    Login
+	sessions *auth.Sessions
+	siteURL  string
+	log      *slog.Logger
+	pages    map[string]*template.Template
 }
 
 // New는 템플릿을 읽어 Server를 만든다.
-func New(st Store, bandNo string, log *slog.Logger) (*Server, error) {
-	s := &Server{store: st, bandNo: bandNo, log: log, pages: map[string]*template.Template{}}
+func New(st Store, cfg Config, log *slog.Logger) (*Server, error) {
+	s := &Server{
+		store: st, bandNo: cfg.BandNo, login: cfg.Login, sessions: cfg.Sessions, siteURL: cfg.SiteURL,
+		log: log, pages: map[string]*template.Template{},
+	}
+	if (s.login == nil) != (s.sessions == nil) {
+		return nil, errors.New("관리자 로그인에는 Login과 Sessions가 모두 있어야 합니다")
+	}
 	funcs := template.FuncMap{
 		"date":     func(t time.Time) string { return t.In(seoul).Format("2006년 1월 2일") },
 		"isoDate":  func(t time.Time) string { return t.In(seoul).Format("2006-01-02") },
@@ -57,10 +101,13 @@ func New(st Store, bandNo string, log *slog.Logger) (*Server, error) {
 		"buyURL":   buyURL,
 		"postURL":  func(no int) string { return band.PostURL(s.bandNo, no) },
 		"authors":  func(as []string) string { return strings.Join(as, ", ") },
-		"isTopic":  func(tag string) bool { return slices.Contains(book.TopicTags, tag) },
 		"static":   staticURL,
+		"join":     strings.Join,
+		"kindName": kindName,
+		"excerpt":  excerpt,
 	}
-	for _, page := range []string{"timeline", "books", "book", "tags", "authors", "error"} {
+	for _, page := range []string{"timeline", "books", "book", "tags", "authors", "error",
+		"admin-tags", "admin-book", "admin-mention", "admin-admins"} {
 		t, err := template.New("").Funcs(funcs).ParseFS(templateFiles, "templates/layout.html", "templates/parts.html", "templates/"+page+".html")
 		if err != nil {
 			return nil, err
@@ -86,6 +133,19 @@ func staticURL(name string) string {
 	}
 	sum := sha256.Sum256(data)
 	return "/static/" + name + "?v=" + hex.EncodeToString(sum[:4])
+}
+
+// excerptLen은 소식에 보여 줄 요약의 최대 글자 수다.
+const excerptLen = 120
+
+// excerpt는 요약의 줄을 이어 붙이고 앞부분만 남긴다. 줄였으면 끝에 말줄임표를 붙인다.
+func excerpt(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	if utf8.RuneCountInString(s) <= excerptLen {
+		return s
+	}
+	runes := []rune(s)
+	return strings.TrimSpace(string(runes[:excerptLen])) + "…"
 }
 
 func coverURL(b book.Book, width int) string {
@@ -115,6 +175,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /books/{id}", s.book)
 	mux.HandleFunc("GET /tags", s.tags)
 	mux.HandleFunc("GET /authors", s.authors)
+	s.adminRoutes(mux)
 	// Cloud Run 앞단의 Google Frontend가 정확히 /healthz만 가로채서 자체 404를 돌려주므로 /health도 연다.
 	health := func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) }
 	mux.HandleFunc("GET /healthz", health)
@@ -128,9 +189,20 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /robots.txt", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte("User-agent: *\nDisallow: /\n"))
 	})
+	// 다른 사이트에서 보낸 POST 요청(CSRF)을 막는다. 쿠키의 SameSite=Lax에 더해 Sec-Fetch-Site와 Origin을 본다.
+	cop := http.NewCrossOriginProtection()
+	if s.siteURL != "" {
+		if err := cop.AddTrustedOrigin(s.siteURL); err != nil {
+			s.log.Warn("SITE_URL을 믿을 수 있는 출처로 더하지 못했다", "오류", err)
+		}
+	}
+	cop.SetDenyHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.status(w, r, http.StatusForbidden, "요청을 처리할 수 없습니다", "다른 사이트에서 보낸 요청은 받지 않습니다.")
+	}))
+	handler := cop.Handler(s.withAdmin(mux))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Robots-Tag", "noindex, nofollow")
-		mux.ServeHTTP(w, r)
+		handler.ServeHTTP(w, r)
 	})
 }
 
@@ -203,7 +275,8 @@ func (s *Server) book(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	b, mentions, err := s.store.Book(r.Context(), id)
-	if errors.Is(err, store.ErrNotFound) {
+	// 관리자가 언급을 모두 지운 책은 관리자에게만 보인다.
+	if errors.Is(err, store.ErrNotFound) || (err == nil && len(mentions) == 0 && adminEmail(r) == "") {
 		s.notFound(w, r)
 		return
 	}
@@ -211,9 +284,29 @@ func (s *Server) book(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	tags, err := s.store.Tags(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	s.render(w, r, "book", "layout", map[string]any{
-		"Title": b.Title, "Nav": "books", "Book": b, "Count": len(mentions), "Threads": book.Threads(mentions),
+		"Title": b.Title, "Nav": "books", "Book": b, "Tags": tagViews(b.Tags, tags),
+		"Count": len(mentions), "Threads": book.Threads(mentions),
 	})
+}
+
+// tagView는 화면에 보여 줄 책의 태그다.
+type tagView struct {
+	Name  string
+	Topic bool
+}
+
+func tagViews(names []string, tags book.TagList) []tagView {
+	views := make([]tagView, len(names))
+	for i, name := range names {
+		views[i] = tagView{Name: name, Topic: tags.IsTopic(name)}
+	}
+	return views
 }
 
 func (s *Server) tags(w http.ResponseWriter, r *http.Request) {
@@ -222,15 +315,20 @@ func (s *Server) tags(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	tags, err := s.store.Tags(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	// 모임 주제는 정한 순서(최근 주제가 먼저)로 앞에 두고, 나머지 태그는 책이 많은 순서로 둔다.
 	var topics, others []book.Count
-	for _, topic := range book.TopicTags {
+	for _, topic := range tags.Topics() {
 		if i := slices.IndexFunc(counts, func(c book.Count) bool { return c.Name == topic }); i >= 0 {
 			topics = append(topics, counts[i])
 		}
 	}
 	for _, c := range counts {
-		if !slices.Contains(book.TopicTags, c.Name) {
+		if !tags.IsTopic(c.Name) {
 			others = append(others, c)
 		}
 	}
@@ -254,6 +352,9 @@ func nextPage(more bool, p int) int {
 }
 
 func (s *Server) render(w http.ResponseWriter, r *http.Request, page, name string, data map[string]any) {
+	data["Admin"] = adminEmail(r)
+	data["LoginEnabled"] = s.login != nil
+	data["Path"] = r.URL.RequestURI()
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.pages[page].ExecuteTemplate(w, name, data); err != nil {
 		s.log.Error("화면을 그리지 못했다", "path", r.URL.Path, "오류", err)
@@ -261,12 +362,17 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, page, name strin
 }
 
 func (s *Server) notFound(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusNotFound)
-	s.render(w, r, "error", "layout", map[string]any{"Title": "찾을 수 없습니다", "Message": "찾는 책이 없습니다."})
+	s.status(w, r, http.StatusNotFound, "찾을 수 없습니다", "찾는 책이 없습니다.")
+}
+
+// status는 상태 코드와 함께 안내 화면을 그린다.
+func (s *Server) status(w http.ResponseWriter, r *http.Request, code int, title, message string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(code)
+	s.render(w, r, "error", "layout", map[string]any{"Title": title, "Message": message})
 }
 
 func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	s.log.Error("요청 처리 실패", "path", r.URL.Path, "오류", err)
-	w.WriteHeader(http.StatusInternalServerError)
-	s.render(w, r, "error", "layout", map[string]any{"Title": "오류", "Message": "잠시 후 다시 시도해 주세요."})
+	s.status(w, r, http.StatusInternalServerError, "오류", "잠시 후 다시 시도해 주세요.")
 }

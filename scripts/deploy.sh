@@ -41,6 +41,12 @@ env_vars=()
 
 if [[ "$target" == web ]]; then
   flags=()
+  secrets="DB_PWD=${DB_PWD_SECRET}:latest"
+  # 관리자 로그인. GOOGLE_CLIENT_ID가 비어 있으면 관리자 로그인 없이 배포한다.
+  if [[ -n "$GOOGLE_CLIENT_ID" ]]; then
+    env_vars+=("GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}" "SITE_URL=${SITE_URL}")
+    secrets+=",GOOGLE_CLIENT_SECRET=${GOOGLE_SECRET}:latest,SESSION_SECRET=${SESSION_SECRET_NAME}:latest"
+  fi
   # 공개 접근은 처음 만들 때만 설정한다. GitHub Actions의 배포 계정은 IAM 정책을 바꾸지 못한다.
   if ! gcloud run services describe "$WEB_SERVICE" --region "$region" --project "$PROJECT" >/dev/null 2>&1; then
     flags+=(--allow-unauthenticated)
@@ -49,7 +55,7 @@ if [[ "$target" == web ]]; then
   gcloud run deploy "$WEB_SERVICE" --image "$image" --region "$region" --project "$PROJECT" \
     --service-account "$WEB_SA" \
     --min-instances 0 --max-instances 3 \
-    --set-secrets "DB_PWD=${DB_PWD_SECRET}:latest" \
+    --set-secrets "$secrets" \
     "${flags[@]}"
   gcloud run services describe "$WEB_SERVICE" --region "$region" --project "$PROJECT" --format 'value(status.url)'
 else

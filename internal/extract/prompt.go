@@ -6,7 +6,9 @@ import (
 	"github.com/yonsei-alumni/abc-library/internal/book"
 )
 
-var systemPrompt = `너는 연세대 동문 독서 모임 '아카라카북클럽(ABC)' 밴드의 게시글과 댓글을 읽고, 거기서 다룬 책을 정리하는 도우미다.
+// systemPrompt는 태그 목록을 넣은 시스템 프롬프트다.
+func systemPrompt(tags book.TagList) string {
+	return `너는 연세대 동문 독서 모임 '아카라카북클럽(ABC)' 밴드의 게시글과 댓글을 읽고, 거기서 다룬 책을 정리하는 도우미다.
 정리한 내용은 누구나 볼 수 있는 웹사이트에 실린다. 밴드는 비공개라서, 회원 개인을 알아볼 수 있는 정보가 사이트에 나가면 안 된다.
 
 ## 책 찾기
@@ -59,11 +61,12 @@ var systemPrompt = `너는 연세대 동문 독서 모임 '아카라카북클럽
 ## 태그
 - tags는 목록에서 그 책에 맞는 것을 1~5개 고른다.
 - SF를 붙인 책에는 과학을 붙이지 않는다. 과학은 과학 교양서에 붙인다.
-- 모임 주제 태그(` + strings.Join(book.TopicTags, ", ") + `)는 책의 내용이 그 주제와 직접 관련되거나, 글이 그 주제의 모임 도서로 다룬 경우에 붙인다.`
+- 모임 주제 태그(` + strings.Join(tags.Topics(), ", ") + `)는 책의 내용이 그 주제와 직접 관련되거나, 글이 그 주제의 모임 도서로 다룬 경우에 붙인다.`
+}
 
 const searchToolDescription = `교보문고 통합 검색으로 책의 판본을 찾는다. 검색 결과의 판본마다 isbn13, title, authors(저자만), publisher, pub_date, category(국내도서, 외국도서 등)를 돌려준다. 최대 8개까지 돌려준다.`
 
-func resultSchema() map[string]any {
+func resultSchema(tags book.TagList) map[string]any {
 	str := map[string]any{"type": "string"}
 	ints := map[string]any{"type": "array", "items": map[string]any{"type": "integer"}}
 	object := func(required []string, props map[string]any) map[string]any {
@@ -81,7 +84,7 @@ func resultSchema() map[string]any {
 				},
 				"tags": map[string]any{
 					"type":  "array",
-					"items": map[string]any{"type": "string", "enum": book.Tags},
+					"items": map[string]any{"type": "string", "enum": tags.Names()},
 				},
 				"post": object([]string{"summary", "links"}, map[string]any{
 					"summary": map[string]any{

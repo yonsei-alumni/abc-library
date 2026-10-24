@@ -40,7 +40,7 @@ func TestExtractWithClaude(t *testing.T) {
 			{At: posted.Add(2 * time.Hour), Text: "다음 모임은 언제인가요?"},
 		},
 	}
-	got, err := New(&client.Beta.Messages, kyobo.NewClient()).Extract(ctx, in)
+	got, err := New(&client.Beta.Messages, kyobo.NewClient(), testTags).Extract(ctx, in)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +111,7 @@ func TestExtractSeriesAndUnrelatedLinksWithClaude(t *testing.T) {
 			{At: posted.Add(time.Hour), Text: "닐 셔스터먼의 수확자 시리즈도 추천해요. 죽음이 사라진 미래 이야기예요."},
 		},
 	}
-	got, err := New(&client.Beta.Messages, kyobo.NewClient()).Extract(ctx, in)
+	got, err := New(&client.Beta.Messages, kyobo.NewClient(), testTags).Extract(ctx, in)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,7 +168,7 @@ func TestExtractDigestDropsLinksOutsideBookWithClaude(t *testing.T) {
 			{URL: "https://news.example.com/ai-welfare", Title: "\"AI도 괴롭히면 안 된다\"…AI 회사 원칙 명문화"},
 		},
 	}
-	got, err := New(&client.Beta.Messages, kyobo.NewClient()).Extract(ctx, in)
+	got, err := New(&client.Beta.Messages, kyobo.NewClient(), testTags).Extract(ctx, in)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,7 +199,7 @@ func TestExtractBooksFromReadingLogLinksWithClaude(t *testing.T) {
 			{URL: "https://bookshelf.example.com/born-to-run/", Title: ""},
 		},
 	}
-	got, err := New(&client.Beta.Messages, kyobo.NewClient()).Extract(ctx, in)
+	got, err := New(&client.Beta.Messages, kyobo.NewClient(), testTags).Extract(ctx, in)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +231,7 @@ func TestExtractBracketedTitlesWithClaude(t *testing.T) {
 2. 산책하다가 《소설가 구보씨의 일일》 생각이 났다는 분이 있었어요.
 3. 다음 모임 장소는 다음 주에 정하기로 했습니다.`,
 	}
-	got, err := New(&client.Beta.Messages, kyobo.NewClient()).Extract(ctx, in)
+	got, err := New(&client.Beta.Messages, kyobo.NewClient(), testTags).Extract(ctx, in)
 	if err != nil {
 		t.Fatal(err)
 	}

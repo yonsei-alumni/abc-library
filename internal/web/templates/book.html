@@ -6,8 +6,9 @@
       <h1 class="book-title">{{.Book.Title}}</h1>
       {{if .Book.Authors}}<p class="book-authors">{{range $i, $a := .Book.Authors}}{{if $i}}, {{end}}<a href="/books?author={{$a}}">{{$a}}</a>{{end}}</p>{{end}}
       {{if .Book.Publisher}}<p class="book-publisher">{{.Book.Publisher}}</p>{{end}}
-      {{template "tag-list" .Book.Tags}}
+      {{template "tag-list" .Tags}}
       <a class="buy" href="{{buyURL .Book}}" target="_blank" rel="noopener">교보문고에서 보기</a>
+      {{if .Admin}}<a class="button button-quiet admin-link" href="/admin/books/{{.Book.ID}}">책 편집</a>{{end}}
     </div>
   </div>
 
@@ -18,7 +19,7 @@
       <li class="thread">
         {{with .Post}}
         <div class="mention">
-          <p class="mention-meta"><span class="kind">게시글</span> <time datetime="{{isoDate .At}}">{{date .At}}</time></p>
+          <p class="mention-meta"><span class="kind">게시글</span> <time datetime="{{isoDate .At}}">{{date .At}}</time>{{if $.Admin}} <a class="edit-link" href="/admin/mentions/{{.ID}}">편집</a>{{end}}</p>
           <p class="summary">{{.Summary}}</p>
           {{template "links" .Links}}
         </div>
@@ -27,7 +28,7 @@
         <ol class="replies">
           {{range .Comments}}
           <li class="mention mention-comment">
-            <p class="mention-meta"><span class="kind kind-comment">댓글</span> <time datetime="{{isoDate .At}}">{{date .At}}</time></p>
+            <p class="mention-meta"><span class="kind kind-comment">댓글</span> <time datetime="{{isoDate .At}}">{{date .At}}</time>{{if $.Admin}} <a class="edit-link" href="/admin/mentions/{{.ID}}">편집</a>{{end}}</p>
             <p class="summary">{{.Summary}}</p>
             {{template "links" .Links}}
           </li>

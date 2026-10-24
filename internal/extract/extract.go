@@ -69,11 +69,12 @@ type MessageAPI interface {
 type Extractor struct {
 	api    MessageAPI
 	search Searcher
+	tags   book.TagList
 }
 
-// New는 Extractor를 만든다.
-func New(api MessageAPI, search Searcher) *Extractor {
-	return &Extractor{api: api, search: search}
+// New는 Extractor를 만든다. 책에 붙일 태그는 tags에서만 고른다.
+func New(api MessageAPI, search Searcher, tags book.TagList) *Extractor {
+	return &Extractor{api: api, search: search, tags: tags}
 }
 
 type searchInput struct {
@@ -103,7 +104,7 @@ func (e *Extractor) Extract(ctx context.Context, in Input) ([]book.Finding, erro
 	seen := map[string]kyobo.Edition{}
 	messages := []anthropic.BetaMessageParam{anthropic.NewBetaUserMessage(userContent(in)...)}
 	for range maxTurns {
-		resp, err := e.api.New(ctx, params(messages))
+		resp, err := e.api.New(ctx, e.params(messages))
 		if err != nil {
 			return nil, err
 		}
@@ -120,7 +121,7 @@ func (e *Extractor) Extract(ctx context.Context, in Input) ([]book.Finding, erro
 			}
 			messages = append(messages, anthropic.NewBetaUserMessage(results...))
 		case anthropic.BetaStopReasonEndTurn:
-			return parseResult(resp, in, seen)
+			return e.parseResult(resp, in, seen)
 		default:
 			return nil, fmt.Errorf("예상하지 못한 stop_reason: %s", resp.StopReason)
 		}
@@ -128,11 +129,11 @@ func (e *Extractor) Extract(ctx context.Context, in Input) ([]book.Finding, erro
 	return nil, fmt.Errorf("도구 호출이 %d번을 넘었습니다", maxTurns)
 }
 
-func params(messages []anthropic.BetaMessageParam) anthropic.BetaMessageNewParams {
+func (e *Extractor) params(messages []anthropic.BetaMessageParam) anthropic.BetaMessageNewParams {
 	return anthropic.BetaMessageNewParams{
 		Model:     model,
 		MaxTokens: 16000,
-		System:    []anthropic.BetaTextBlockParam{{Text: systemPrompt}},
+		System:    []anthropic.BetaTextBlockParam{{Text: systemPrompt(e.tags)}},
 		Messages:  messages,
 		Tools: []anthropic.BetaToolUnionParam{{OfTool: &anthropic.BetaToolParam{
 			Name:        "search_kyobo",
@@ -148,7 +149,7 @@ func params(messages []anthropic.BetaMessageParam) anthropic.BetaMessageNewParam
 		}}},
 		OutputConfig: anthropic.BetaOutputConfigParam{
 			Effort: anthropic.BetaOutputConfigEffortMedium,
-			Format: anthropic.BetaJSONOutputFormatParam{Schema: resultSchema()},
+			Format: anthropic.BetaJSONOutputFormatParam{Schema: resultSchema(e.tags)},
 		},
 		// 안전 분류기가 오탐으로 거절하면 서버가 다른 모델로 다시 처리한다.
 		Betas:     []anthropic.AnthropicBeta{anthropic.AnthropicBetaServerSideFallback2026_07_01},
@@ -223,7 +224,7 @@ func (e *Extractor) runSearch(ctx context.Context, use anthropic.BetaToolUseBloc
 	return anthropic.NewBetaToolResultBlock(use.ID, string(out), false)
 }
 
-func parseResult(resp *anthropic.BetaMessage, in Input, seen map[string]kyobo.Edition) ([]book.Finding, error) {
+func (e *Extractor) parseResult(resp *anthropic.BetaMessage, in Input, seen map[string]kyobo.Edition) ([]book.Finding, error) {
 	var text strings.Builder
 	for _, block := range resp.Content {
 		if t, ok := block.AsAny().(anthropic.BetaTextBlock); ok {
@@ -244,7 +245,7 @@ func parseResult(resp *anthropic.BetaMessage, in Input, seen map[string]kyobo.Ed
 	keys := map[string]bool{}
 	postBooks := 0
 	for i, rb := range r.Books {
-		b := book.Book{Title: strings.TrimSpace(rb.Title), Authors: trimAll(rb.Authors), Tags: tags(rb.Tags)}
+		b := book.Book{Title: strings.TrimSpace(rb.Title), Authors: trimAll(rb.Authors), Tags: pickTags(rb.Tags, e.tags)}
 		// 검색 결과에 없던 ISBN은 Claude가 지어냈을 수 있으므로 버린다.
 		if ed, ok := seen[rb.ISBN13]; ok {
 			b.ISBN13, b.Title, b.Publisher, b.KyoboPID = ed.ISBN13, ed.Title, ed.Publisher, ed.PID
@@ -347,16 +348,16 @@ func IsStoreLink(u *url.URL) bool {
 		(host == "smartstore.naver.com" || host == "shopping.naver.com" || host == "search.shopping.naver.com")
 }
 
-// tags는 목록에 있는 태그만 중복 없이 최대 maxTags개 남긴다.
+// pickTags는 목록(allowed)에 있는 태그만 중복 없이 최대 maxTags개 남긴다.
 // SF 책에는 과학 태그를 붙이지 않는다. 모임에서 과학 태그는 과학 교양서를 가리킨다.
-func tags(ts []string) []string {
+func pickTags(ts []string, allowed book.TagList) []string {
 	sf := slices.Contains(ts, "SF")
 	var out []string
 	for _, t := range ts {
 		if sf && t == "과학" {
 			continue
 		}
-		if slices.Contains(book.Tags, t) && !slices.Contains(out, t) && len(out) < maxTags {
+		if allowed.Has(t) && !slices.Contains(out, t) && len(out) < maxTags {
 			out = append(out, t)
 		}
 	}

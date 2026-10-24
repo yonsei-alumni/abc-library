@@ -4,13 +4,16 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
+	"github.com/yonsei-alumni/abc-library/internal/auth"
 	"github.com/yonsei-alumni/abc-library/internal/config"
 	"github.com/yonsei-alumni/abc-library/internal/store"
 	"github.com/yonsei-alumni/abc-library/internal/web"
@@ -35,12 +38,20 @@ func run(log *slog.Logger) error {
 	}
 	defer func() { _ = st.Close() }()
 
-	srv, err := web.New(st, config.Get("BAND_NO", "102765569"), log)
+	port := config.Get("PORT", "8080")
+	cfg, err := webConfig(port)
+	if err != nil {
+		return err
+	}
+	if cfg.Login == nil {
+		log.Info("GOOGLE_CLIENT_ID가 없어서 관리자 로그인을 쓰지 않는다")
+	}
+	srv, err := web.New(st, cfg, log)
 	if err != nil {
 		return err
 	}
 	httpSrv := &http.Server{
-		Addr:              ":" + config.Get("PORT", "8080"),
+		Addr:              ":" + port,
 		Handler:           srv.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -60,4 +71,25 @@ func run(log *slog.Logger) error {
 		return err
 	}
 	return nil
+}
+
+// webConfig는 환경 변수로 웹 서버 설정을 만든다. GOOGLE_CLIENT_ID가 없으면 관리자 로그인을 쓰지 않는다.
+func webConfig(port string) (web.Config, error) {
+	siteURL := strings.TrimRight(config.Get("SITE_URL", "http://localhost:"+port), "/")
+	cfg := web.Config{BandNo: config.Get("BAND_NO", "102765569"), SiteURL: siteURL}
+	clientID := os.Getenv("GOOGLE_CLIENT_ID")
+	if clientID == "" {
+		return cfg, nil
+	}
+	secret := os.Getenv("GOOGLE_CLIENT_SECRET")
+	if secret == "" {
+		return cfg, errors.New("GOOGLE_CLIENT_ID가 있으면 GOOGLE_CLIENT_SECRET도 있어야 합니다")
+	}
+	sessions, err := auth.NewSessions(os.Getenv("SESSION_SECRET"), strings.HasPrefix(siteURL, "https://"))
+	if err != nil {
+		return cfg, fmt.Errorf("SESSION_SECRET: %w", err)
+	}
+	cfg.Sessions = sessions
+	cfg.Login = &auth.Google{ClientID: clientID, ClientSecret: secret, RedirectURL: siteURL + "/auth/callback"}
+	return cfg, nil
 }

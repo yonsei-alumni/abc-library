@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"errors"
+	"fmt"
 	"html"
 	"io"
 	"log/slog"
@@ -24,18 +25,33 @@ var (
 	posted = time.Date(2026, 10, 21, 1, 24, 0, 0, seoul)
 )
 
+// defaultTags는 fakeStore의 태그 목록이다.
+var defaultTags = book.TagList{{Name: "AI", Kind: book.TopicTag}, {Name: "SF", Kind: book.TopicTag}, {Name: "소설", Kind: book.KindTag}}
+
 type fakeStore struct {
 	filter  store.Filter
 	offsets []int
 	entries int
 	fail    bool
+
+	// 관리 화면이 부른 수정 메서드와 인자를 차례로 남긴다.
+	calls []string
+	// 수정 메서드가 돌려줄 오류다.
+	err     error
+	updated book.Book
+	links   []book.Link
+}
+
+func (f *fakeStore) record(format string, args ...any) error {
+	f.calls = append(f.calls, fmt.Sprintf(format, args...))
+	return f.err
 }
 
 func (f *fakeStore) Timeline(_ context.Context, limit, offset int) ([]book.Entry, error) {
 	f.offsets = append(f.offsets, offset)
 	var es []book.Entry
 	for i := offset; i < f.entries && len(es) < limit; i++ {
-		es = append(es, book.Entry{Book: story, PostNo: 184, PostedAt: posted, IsNew: i == 0})
+		es = append(es, book.Entry{Book: story, PostNo: 184, PostedAt: posted, IsNew: i == 0, Summary: "언어를 배우며\n시간을 다르게 본다."})
 	}
 	return es, nil
 }
@@ -55,14 +71,17 @@ func (f *fakeStore) Book(_ context.Context, id int64) (book.Book, []book.Mention
 	switch id {
 	case 1:
 		return story, []book.Mention{
-			{PostNo: 184, Kind: book.InPost, At: posted, Summary: "본문 첫 줄\n본문 둘째 줄",
+			{ID: 5, BookID: 1, PostNo: 184, Kind: book.InPost, At: posted, Summary: "본문 첫 줄\n본문 둘째 줄",
 				Links: []book.Link{{URL: "https://news.example.com/a", Title: "관련 기사"}}},
 			{PostNo: 184, Kind: book.InComment, At: posted.Add(time.Hour), Summary: "같은 글의 댓글 요약"},
 			{PostNo: 190, Kind: book.InComment, At: posted.Add(48 * time.Hour), Summary: "다른 글의 댓글 요약",
 				Links: []book.Link{{URL: "https://www.youtube.com/watch?v=x", Title: "강연 영상"}}},
 		}, nil
 	case 2:
-		return noIsbn, nil, nil
+		return noIsbn, []book.Mention{{ID: 7, BookID: 2, PostNo: 30, Kind: book.InPost, At: posted, Summary: "무수면 요약"}}, nil
+	case 3:
+		// 관리자가 언급을 모두 지운 책
+		return book.Book{ID: 3, Title: "책이 아닌 것"}, nil, nil
 	}
 	return book.Book{}, nil, store.ErrNotFound
 }
@@ -75,12 +94,88 @@ func (f *fakeStore) AuthorCounts(context.Context) ([]book.Count, error) {
 	return []book.Count{{Name: "테드 창", Books: 2}}, nil
 }
 
-func get(t *testing.T, st Store, path string, headers ...string) (int, string) {
+func (f *fakeStore) Tags(context.Context) (book.TagList, error) { return defaultTags, nil }
+
+func (f *fakeStore) AddTag(_ context.Context, t book.Tag) error {
+	return f.record("AddTag %s %s", t.Name, t.Kind)
+}
+
+func (f *fakeStore) RenameTag(_ context.Context, old, name string) error {
+	return f.record("RenameTag %s %s", old, name)
+}
+
+func (f *fakeStore) MoveTag(_ context.Context, name string, up bool) error {
+	return f.record("MoveTag %s %v", name, up)
+}
+
+func (f *fakeStore) DeleteTag(_ context.Context, name string) error {
+	return f.record("DeleteTag %s", name)
+}
+
+func (f *fakeStore) UpdateBook(_ context.Context, b book.Book) error {
+	f.updated = b
+	return f.record("UpdateBook %d", b.ID)
+}
+
+func (f *fakeStore) MergeBook(_ context.Context, from, into int64) error {
+	return f.record("MergeBook %d %d", from, into)
+}
+
+func (f *fakeStore) DeleteBook(_ context.Context, id int64) error {
+	return f.record("DeleteBook %d", id)
+}
+
+func (f *fakeStore) Mention(_ context.Context, id int64) (book.Mention, error) {
+	if id != 5 {
+		return book.Mention{}, store.ErrNotFound
+	}
+	_, ms, _ := f.Book(context.Background(), 1)
+	return ms[0], nil
+}
+
+func (f *fakeStore) UpdateMention(_ context.Context, id int64, summary string, links []book.Link) error {
+	f.links = links
+	return f.record("UpdateMention %d %s", id, summary)
+}
+
+func (f *fakeStore) MoveMention(_ context.Context, id, toBook int64) error {
+	return f.record("MoveMention %d %d", id, toBook)
+}
+
+func (f *fakeStore) DeleteMention(_ context.Context, id int64) error {
+	return f.record("DeleteMention %d", id)
+}
+
+const adminAddr = "admin@example.com"
+
+func (f *fakeStore) Admins(context.Context) ([]store.Admin, error) {
+	return []store.Admin{{Email: adminAddr, CreatedAt: posted}, {Email: "other@example.com", AddedBy: adminAddr, CreatedAt: posted}}, nil
+}
+
+func (f *fakeStore) IsAdmin(_ context.Context, email string) (bool, error) {
+	return email == adminAddr || email == "other@example.com", nil
+}
+
+func (f *fakeStore) AddAdmin(_ context.Context, email, addedBy string) error {
+	return f.record("AddAdmin %s %s", email, addedBy)
+}
+
+func (f *fakeStore) DeleteAdmin(_ context.Context, email string) error {
+	return f.record("DeleteAdmin %s", email)
+}
+
+func newServer(t *testing.T, st Store) *Server {
 	t.Helper()
-	s, err := New(st, "102765569", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	s, err := New(st, Config{BandNo: "102765569"}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
+	return s
+}
+
+func get(t *testing.T, st Store, path string, headers ...string) (int, string) {
+	t.Helper()
+	s := newServer(t, st)
 	req := httptest.NewRequest(http.MethodGet, path, nil)
 	for i := 0; i+1 < len(headers); i += 2 {
 		req.Header.Set(headers[i], headers[i+1])
@@ -111,7 +206,8 @@ func TestTimelinePagesWithHTMX(t *testing.T) {
 		t.Fatalf("code = %d", code)
 	}
 	assertContains(t, body, "<title>최근 소식 · ABC 도서관</title>", "새 책", "이야기 추가", "/books/1",
-		"https://contents.kyobobook.co.kr/sih/fit-in/240x0/pdt/9791196914806.jpg", `hx-get="/?page=2"`, "2026년 10월 21일")
+		"https://contents.kyobobook.co.kr/sih/fit-in/240x0/pdt/9791196914806.jpg", `hx-get="/?page=2"`, "2026년 10월 21일",
+		`<span class="entry-excerpt">언어를 배우며 시간을 다르게 본다.</span>`)
 
 	code, body = get(t, st, "/?page=2", "HX-Request", "true", "HX-Target", "timeline-more")
 	if code != http.StatusOK || strings.Contains(body, "<html") {
@@ -176,7 +272,15 @@ func TestBookDetailShowsThreads(t *testing.T) {
 
 	// 교보문고 상품을 확정하지 못한 책은 교보문고 검색으로 연결한다.
 	_, body = get(t, &fakeStore{}, "/books/2")
-	assertContains(t, body, "https://search.kyobobook.co.kr/search?keyword=%EB%AC%B4%EC%88%98%EB%A9%B4+%EC%82%AC%ED%9A%8C+%EA%B9%80%EC%B0%AC%ED%98%B8", "cover-blank", "이야기 0개")
+	assertContains(t, body, "https://search.kyobobook.co.kr/search?keyword=%EB%AC%B4%EC%88%98%EB%A9%B4+%EC%82%AC%ED%9A%8C+%EA%B9%80%EC%B0%AC%ED%98%B8", "cover-blank", "이야기 1개")
+
+	// 관리자가 언급을 모두 지운 책은 방문자에게 보이지 않는다.
+	if code, _ := get(t, &fakeStore{}, "/books/3"); code != http.StatusNotFound {
+		t.Errorf("언급이 없는 책 code = %d", code)
+	}
+	if strings.Contains(body, "/admin/") || strings.Contains(body, "관리자 로그인") {
+		t.Error("로그인을 설정하지 않았거나 관리자가 아니면 관리 링크가 없어야 한다")
+	}
 }
 
 func TestTagsPutsTopicsFirst(t *testing.T) {
@@ -185,7 +289,7 @@ func TestTagsPutsTopicsFirst(t *testing.T) {
 	if !ok {
 		t.Fatal("모임 주제와 그 밖의 태그를 나눠야 한다")
 	}
-	// 모임 주제는 TopicTags 순서(AI, SF)로, 나머지는 따로 둔다.
+	// 모임 주제는 태그 목록의 순서(AI, SF)로, 나머지는 따로 둔다.
 	if i, j := strings.Index(topics, "#AI"), strings.Index(topics, "#SF"); i < 0 || j < 0 || i > j || !strings.Contains(topics, "모임 주제") {
 		t.Errorf("모임 주제 순서가 잘못됐다")
 	}
@@ -202,6 +306,21 @@ func TestNotFoundAndErrors(t *testing.T) {
 	}
 	if code, body := get(t, &fakeStore{fail: true}, "/books"); code != http.StatusInternalServerError || strings.Contains(body, "DB 오류") {
 		t.Errorf("내부 오류 내용을 화면에 노출하지 않아야 한다: %d", code)
+	}
+}
+
+func TestExcerpt(t *testing.T) {
+	long := strings.Repeat("가", excerptLen+5)
+	for in, want := range map[string]string{
+		"":                              "",
+		" 첫 줄\n\n 둘째   줄 ":              "첫 줄 둘째 줄",
+		strings.Repeat("가", excerptLen): strings.Repeat("가", excerptLen),
+		long:                            strings.Repeat("가", excerptLen) + "…",
+		strings.Repeat("가", excerptLen-1) + " 나다": strings.Repeat("가", excerptLen-1) + "…",
+	} {
+		if got := excerpt(in); got != want {
+			t.Errorf("excerpt(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 
@@ -222,10 +341,7 @@ func TestAuthorsAndStatic(t *testing.T) {
 }
 
 func TestBlocksSearchEngines(t *testing.T) {
-	s, err := New(&fakeStore{}, "102765569", slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := newServer(t, &fakeStore{})
 	for _, path := range []string{"/", "/books/1", "/nothing", "/static/style.css"} {
 		rec := httptest.NewRecorder()
 		s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
