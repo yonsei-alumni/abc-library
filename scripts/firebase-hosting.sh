@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Firebase Hosting 사이트(https://abc-library.web.app)가 모든 요청을 Cloud Run 웹 서비스로 넘기게 한다.
+# Firebase Hosting 사이트(https://abc-lib.web.app)가 모든 요청을 Cloud Run 웹 서비스로 넘기게 한다.
 #
 #   make firebase-hosting
 #

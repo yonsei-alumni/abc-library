@@ -52,6 +52,6 @@ deploy-web:
 deploy-batch:
 	scripts/deploy.sh batch
 
-# https://abc-library.web.app을 웹 서비스에 연결한다. rewrite 설정을 바꿀 때만 다시 실행한다.
+# https://abc-lib.web.app을 웹 서비스에 연결한다. rewrite 설정을 바꿀 때만 다시 실행한다.
 firebase-hosting:
 	scripts/firebase-hosting.sh

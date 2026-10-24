@@ -83,6 +83,9 @@ func TestExtractScript(t *testing.T) {
 	if !strings.Contains(s.Text, "테드 창의 소설집") || strings.Contains(s.Text, "가상회원") {
 		t.Errorf("본문만 읽고 작성자는 읽지 않아야 한다: %q", s.Text)
 	}
+	if !strings.Contains(s.Text, "《소설가 구보씨의 일일》") {
+		t.Errorf("사진 아래 이어지는 본문 덩어리도 읽어야 한다: %q", s.Text)
+	}
 	if s.Time != "2026년 10월 21일 오전 1:24" {
 		t.Errorf("시각 = %q", s.Time)
 	}

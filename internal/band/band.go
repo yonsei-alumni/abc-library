@@ -256,7 +256,8 @@ const extractScript = `() => {
     return [...links.values()];
   };
   const body = main.querySelector('.postBody');
-  const text = body && body.querySelector('.dPostTextView .txtBody');
+  // 본문은 사진이나 첨부를 사이에 두고 여러 덩어리로 나뉠 수 있으므로 모두 읽는다.
+  const texts = body ? [...body.querySelectorAll('.dPostTextView .txtBody')].map(t => t.innerText.trim()).filter(t => t) : [];
   const images = body ? [...body.querySelectorAll('img')]
     .filter(img => !img.closest('.snippet'))
     .map(img => img.currentSrc || img.getAttribute('src'))
@@ -271,7 +272,7 @@ const extractScript = `() => {
     return {text: ctext ? ctext.innerText.trim() : '', time: timeOf(ctime), links: linksIn(cbody)};
   }).filter(c => c.text || c.links.length);
   return JSON.stringify({
-    text: text ? text.innerText : '', links: linksIn(body), images: [...new Set(images)],
+    text: texts.join('\n\n'), links: linksIn(body), images: [...new Set(images)],
     time: timeOf(time), comments,
   });
 }`

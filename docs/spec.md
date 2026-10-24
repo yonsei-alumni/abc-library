@@ -75,7 +75,7 @@
 
 | 구성 요소 | 위치 |
 |---|---|
-| 웹 서버 | Cloud Run, `asia-southeast1`(싱가포르). 공개 주소는 Firebase Hosting의 https://abc-library.web.app이고, 모든 요청을 Cloud Run으로 넘긴다 |
+| 웹 서버 | Cloud Run, `asia-southeast1`(싱가포르). 공개 주소는 Firebase Hosting의 https://abc-lib.web.app이고, 모든 요청을 Cloud Run으로 넘긴다 |
 | DB | Neon 프로젝트 `abc-library`, `aws-ap-southeast-1`(싱가포르), Postgres 18, DB 이름 `abc_library` |
 | 일일 배치 | Cloud Run Job, `asia-northeast3`(서울). 밴드 세션이 한국 IP에서 쓰이게 한다. Cloud Scheduler로 하루 한 번 실행한다 |
 | 비밀 값 | Secret Manager(`DB_PWD`, 밴드 `storageState`, Claude API 키) |
@@ -113,7 +113,7 @@ make gcp-setup                  # API, 저장소, 서비스 계정, 비밀, GitH
 make band-secret                # band-state.json을 Secret Manager에 올림
 make deploy-web deploy-batch    # 이미지 빌드, 푸시, 배포(DB_URL도 이때 설정)
 make gcp-schedule               # 매일 실행과 실패 알림
-make firebase-hosting           # https://abc-library.web.app을 웹 서비스에 연결
+make firebase-hosting           # https://abc-lib.web.app을 웹 서비스에 연결
 ```
 
 `make firebase-hosting` 전에 Firebase 콘솔에서 이 프로젝트에 Firebase를 한 번 추가해야 한다(약관 동의와 Blaze 요금제 확인). Firebase 프로젝트를 지우면 GCP 프로젝트 전체가 지워지므로 지우지 않는다.
