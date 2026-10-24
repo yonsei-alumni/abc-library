@@ -79,7 +79,8 @@
 
 ## 검증
 
-- 작업을 마치기 전에 `make check`가 통과해야 한다. 포맷과 린트 규칙은 `.golangci.yml`이 정한다.
+- 검증은 훅이 한다. 파일을 고친 직후 `scripts/check-go.sh`가 포맷과 린트를, 작업을 마칠 때 `scripts/verify.sh`가 `make ci`를 실행한다. 문서(`.md` 파일과 `docs/`)만 바뀌었으면 건너뛴다.
+- 포맷과 린트 규칙은 `.golangci.yml`이 정한다.
 
 ## 언어
 

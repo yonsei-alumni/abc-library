@@ -17,6 +17,17 @@ if [[ -z "$(find "$root" -name '*.go' -not -path '*/testdata/*' -not -path '*/.g
   exit 0
 fi
 
+# push하지 않은 변경(커밋, 수정, 새 파일)이 없거나 문서뿐이면 검사하지 않는다.
+# push한 코드는 CI가 검사한다. 문서의 범위는 CI의 paths-ignore와 같다(.md 파일과 docs/).
+base="$(git -C "$root" rev-parse -q --verify '@{upstream}' || echo HEAD)"
+changed="$(
+  git -C "$root" diff --name-only "$base"
+  git -C "$root" ls-files --others --exclude-standard
+)"
+if ! grep -qvE '^$|\.md$|^docs/' <<<"$changed"; then
+  exit 0
+fi
+
 if ! out="$(make -s -C "$root" ci 2>&1)"; then
   echo "make ci 실패:" >&2
   tail -n 80 <<<"$out" >&2
