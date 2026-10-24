@@ -347,9 +347,15 @@ func IsStoreLink(u *url.URL) bool {
 		(host == "smartstore.naver.com" || host == "shopping.naver.com" || host == "search.shopping.naver.com")
 }
 
+// tags는 목록에 있는 태그만 중복 없이 최대 maxTags개 남긴다.
+// SF 책에는 과학 태그를 붙이지 않는다. 모임에서 과학 태그는 과학 교양서를 가리킨다.
 func tags(ts []string) []string {
+	sf := slices.Contains(ts, "SF")
 	var out []string
 	for _, t := range ts {
+		if sf && t == "과학" {
+			continue
+		}
 		if slices.Contains(book.Tags, t) && !slices.Contains(out, t) && len(out) < maxTags {
 			out = append(out, t)
 		}

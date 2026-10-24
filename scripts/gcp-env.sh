@@ -4,7 +4,7 @@
 # gcloud가 PATH에 없으면 기본 설치 경로를 잡는다.
 command -v gcloud >/dev/null 2>&1 || PATH="$HOME/google-cloud-sdk/bin:$PATH"
 
-PROJECT=benelog
+PROJECT=abc-library-512606
 WEB_REGION=asia-southeast1   # 싱가포르. Neon DB와 같은 지역이다.
 BATCH_REGION=asia-northeast3 # 서울. 밴드 세션이 한국 IP에서 쓰이게 한다.
 

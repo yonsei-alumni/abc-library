@@ -244,6 +244,19 @@ func TestExtractStopsAfterTooManyToolCalls(t *testing.T) {
 	}
 }
 
+func TestTagsDropScienceFromSF(t *testing.T) {
+	for _, tt := range []struct{ in, want []string }{
+		{[]string{"과학", "SF", "소설"}, []string{"SF", "소설"}},
+		{[]string{"과학", "인문"}, []string{"과학", "인문"}},
+		{[]string{"SF", "SF", "없는 태그", "AI", "소설", "철학", "역사", "인문"}, []string{"SF", "AI", "소설", "철학", "역사"}},
+		{nil, nil},
+	} {
+		if got := tags(tt.in); !slices.Equal(got, tt.want) {
+			t.Errorf("tags(%v) = %v, want %v", tt.in, got, tt.want)
+		}
+	}
+}
+
 func TestIsStoreLink(t *testing.T) {
 	for raw, want := range map[string]bool{
 		"https://product.kyobobook.co.kr/detail/S000001981838": true,

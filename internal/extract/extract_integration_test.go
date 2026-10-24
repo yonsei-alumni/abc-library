@@ -214,3 +214,33 @@ func TestExtractBooksFromReadingLogLinksWithClaude(t *testing.T) {
 		t.Errorf("독서 기록 링크 주소로 '연희동 러너'와 '본 투 런'을 찾아야 한다: %+v", got)
 	}
 }
+
+// 《 》나 『 』로 감싼 제목은 지나가듯 언급해도 책으로 넣는지 본다.
+func TestExtractBracketedTitlesWithClaude(t *testing.T) {
+	client, err := NewClient()
+	if err != nil {
+		t.Skip(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	in := Input{
+		PostedAt: time.Now().Add(-24 * time.Hour),
+		Text: `#대화방_주간요약
+1. 이번 주에는 달리기 이야기가 많았어요. 주말에 한강을 같이 뛰자는 이야기도 나왔습니다.
+2. 산책하다가 《소설가 구보씨의 일일》 생각이 났다는 분이 있었어요.
+3. 다음 모임 장소는 다음 주에 정하기로 했습니다.`,
+	}
+	got, err := New(&client.Beta.Messages, kyobo.NewClient()).Extract(ctx, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, f := range got {
+		t.Logf("책: %+v", f.Book)
+		found = found || strings.Contains(strings.ReplaceAll(f.Book.Title, " ", ""), "소설가구보씨의일일")
+	}
+	if !found {
+		t.Error("《 》로 감싼 제목은 책으로 넣어야 한다")
+	}
+}

@@ -97,7 +97,7 @@
 
 ## 배포
 
-Google Cloud 프로젝트 `benelog`에 배포한다. 값은 `scripts/gcp-env.sh`에 있다.
+Google Cloud 프로젝트 `abc-library-512606`(이름 abc-library)에 배포한다. 2026-10-24에 `benelog` 프로젝트에서 옮겼다. 값은 `scripts/gcp-env.sh`에 있다.
 
 | 구성 요소 | 이름 |
 |---|---|
@@ -116,7 +116,7 @@ make gcp-schedule               # 매일 실행과 실패 알림
 make firebase-hosting           # https://abc-library.web.app을 웹 서비스에 연결
 ```
 
-`make firebase-hosting` 전에 Firebase 콘솔에서 `benelog` 프로젝트에 Firebase를 한 번 추가해야 한다(약관 동의와 Blaze 요금제 확인). Firebase 프로젝트를 지우면 GCP 프로젝트 전체가 지워지므로 지우지 않는다.
+`make firebase-hosting` 전에 Firebase 콘솔에서 이 프로젝트에 Firebase를 한 번 추가해야 한다(약관 동의와 Blaze 요금제 확인). Firebase 프로젝트를 지우면 GCP 프로젝트 전체가 지워지므로 지우지 않는다.
 
 그 뒤에는 `main`에 push하면 GitHub Actions가 배포한다. 환경 변수와 비밀 값 연결은 서비스와 Job에 남아 있어서 워크플로는 이미지만 바꾼다.
 
