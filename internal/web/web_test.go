@@ -220,3 +220,28 @@ func TestAuthorsAndStatic(t *testing.T) {
 		t.Errorf("정적 파일 code = %d", code)
 	}
 }
+
+func TestBlocksSearchEngines(t *testing.T) {
+	s, err := New(&fakeStore{}, "102765569", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/", "/books/1", "/nothing", "/static/style.css"} {
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if got := rec.Header().Get("X-Robots-Tag"); got != "noindex, nofollow" {
+			t.Errorf("%s: X-Robots-Tag = %q", path, got)
+		}
+	}
+	if code, body := get(t, &fakeStore{}, "/robots.txt"); code != http.StatusOK || !strings.Contains(body, "Disallow: /\n") {
+		t.Errorf("robots.txt가 모든 경로를 막아야 한다: %d %q", code, body)
+	}
+}
+
+func TestHealth(t *testing.T) {
+	for _, path := range []string{"/health", "/healthz"} {
+		if code, body := get(t, &fakeStore{fail: true}, path); code != http.StatusOK || body != "ok" {
+			t.Errorf("%s: DB 상태와 상관없이 ok여야 한다: %d %q", path, code, body)
+		}
+	}
+}

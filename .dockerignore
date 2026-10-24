@@ -1,0 +1,16 @@
+# 밴드 세션과 비밀 값은 이미지에 넣지 않는다. 운영에서는 Secret Manager에서 받는다.
+band-state.json
+.env
+.env.*
+.envrc
+.envrc.example
+
+.git
+.github
+.claude
+.codex
+.agents
+docs
+bin
+dist
+coverage.out

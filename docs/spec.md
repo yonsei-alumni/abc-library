@@ -78,8 +78,10 @@
 | 웹 서버 | Cloud Run, `asia-southeast1`(싱가포르) |
 | DB | Neon 프로젝트 `abc-library`, `aws-ap-southeast-1`(싱가포르), Postgres 18, DB 이름 `abc_library` |
 | 일일 배치 | Cloud Run Job, `asia-northeast3`(서울). 밴드 세션이 한국 IP에서 쓰이게 한다. Cloud Scheduler로 하루 한 번 실행한다 |
-| 비밀 값 | Secret Manager(`DB_PWD`, 밴드 `storageState`) |
-| Claude 인증 | 로컬은 `CLAUDE_API_KEY`, 운영 배치는 Workload Identity Federation(Google Cloud) |
+| 비밀 값 | Secret Manager(`DB_PWD`, 밴드 `storageState`, Claude API 키) |
+| Claude 인증 | `CLAUDE_API_KEY`. 운영 배치는 Secret Manager의 `claude-api-key`. Workload Identity Federation은 코드만 준비되어 있다 |
+| 이미지 | Artifact Registry `abc-library` 저장소(웹은 `asia-southeast1`, 배치는 `asia-northeast3`). 최근 5개만 남긴다 |
+| 실행 일정 | Cloud Scheduler `abc-batch-daily`가 매일 03:00(KST)에 Job을 실행한다. Job이 실패하면 Cloud Monitoring이 메일을 보낸다 |
 
 ## 설정 속성
 
@@ -87,8 +89,35 @@
 |---|---|
 | `DB_URL` | 비밀번호를 뺀 Postgres 연결 URL |
 | `DB_PWD` | DB 비밀번호 |
-| `CLAUDE_API_KEY` | 로컬 개발용 Claude API 키 |
-| `ANTHROPIC_FEDERATION_RULE_ID` 외 | 운영 배치의 Workload Identity Federation 설정 |
+| `CLAUDE_API_KEY` | Claude API 키 |
+| `ANTHROPIC_FEDERATION_RULE_ID` 외 | Workload Identity Federation 설정. 설정하면 `CLAUDE_API_KEY` 대신 쓴다 |
 | `BAND_NO` | 밴드 번호(기본 `102765569`) |
 | `BAND_STATE_PATH` | 밴드 로그인 세션 파일(기본 `band-state.json`) |
 | `PORT` | 웹 서버 포트(기본 `8080`) |
+
+## 배포
+
+Google Cloud 프로젝트 `benelog`에 배포한다. 값은 `scripts/gcp-env.sh`에 있다.
+
+| 구성 요소 | 이름 |
+|---|---|
+| 웹 서버 | Cloud Run 서비스 `abc-library`, 서비스 계정 `abc-web`, 최소 인스턴스 0, 공개 접근 |
+| 일일 배치 | Cloud Run Job `abc-batch`, 서비스 계정 `abc-batch`, 2 vCPU, 2GiB, 제한 시간 1시간, 재시도 없음 |
+| 비밀 값 | `db-pwd`(웹, 배치), `band-state`(배치, `/secrets/band/band-state.json`에 파일로 올림), `claude-api-key`(배치) |
+| 실행 계정 | `abc-scheduler`(Job 실행), `abc-deployer`(GitHub Actions 배포) |
+
+처음 한 번은 `.envrc`를 읽은 셸에서 다음 순서로 실행한다. 모두 다시 실행해도 된다.
+
+```bash
+make gcp-setup                  # API, 저장소, 서비스 계정, 비밀, GitHub Actions WIF
+make band-secret                # band-state.json을 Secret Manager에 올림
+make deploy-web deploy-batch    # 이미지 빌드, 푸시, 배포(DB_URL도 이때 설정)
+make gcp-schedule               # 매일 실행과 실패 알림
+```
+
+그 뒤에는 `main`에 push하면 GitHub Actions가 배포한다. 환경 변수와 비밀 값 연결은 서비스와 Job에 남아 있어서 워크플로는 이미지만 바꾼다.
+
+- 밴드 세션이 만료되면 Job이 실패하고 알림 메일이 온다. `make band-login` 뒤에 `make band-secret`을 실행한다. Job은 비밀의 최신 버전을 읽으므로 다시 배포하지 않아도 된다.
+- Claude API 키를 바꾸려면 `gcloud secrets versions add claude-api-key --data-file=-`로 새 버전을 올린다.
+- 웹 서버는 `robots.txt`와 `X-Robots-Tag: noindex`로 검색엔진 수집을 막는다.
+- Cloud Run 앞단의 Google Frontend가 정확히 `/healthz`를 가로채므로 상태 확인은 `/health`로 한다.

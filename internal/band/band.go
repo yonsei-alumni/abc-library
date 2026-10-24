@@ -71,9 +71,15 @@ func OnPostPage(pageURL, bandNo string, postNo int) bool {
 	return strings.TrimSuffix(u.Path, "/") == fmt.Sprintf("/band/%s/post/%d", bandNo, postNo)
 }
 
-// InstallBrowser는 Playwright 드라이버와 Chromium이 없으면 내려받는다.
+// InstallBrowser는 Playwright 드라이버와 Chromium이 없으면 내려받는다. 창을 띄우는 Login에 쓴다.
 func InstallBrowser() error {
 	return playwright.Install(&playwright.RunOptions{Browsers: []string{"chromium"}, Verbose: false})
+}
+
+// InstallHeadlessBrowser는 Playwright 드라이버와 Chromium headless shell이 없으면 내려받는다.
+// 창 없이 도는 Open에는 headless shell만 있으면 되므로, 배치 이미지에는 전체 Chromium을 넣지 않는다.
+func InstallHeadlessBrowser() error {
+	return playwright.Install(&playwright.RunOptions{Browsers: []string{"chromium"}, OnlyInstallShell: true, Verbose: false})
 }
 
 func newContext(browser playwright.Browser, statePath string) (playwright.BrowserContext, error) {

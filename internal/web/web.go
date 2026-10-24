@@ -115,13 +115,23 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /books/{id}", s.book)
 	mux.HandleFunc("GET /tags", s.tags)
 	mux.HandleFunc("GET /authors", s.authors)
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
+	// Cloud Run 앞단의 Google Frontend가 정확히 /healthz만 가로채서 자체 404를 돌려주므로 /health도 연다.
+	health := func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) }
+	mux.HandleFunc("GET /healthz", health)
+	mux.HandleFunc("GET /health", health)
 	static := http.FileServerFS(staticFiles)
 	mux.Handle("GET /static/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "public, max-age=86400")
 		static.ServeHTTP(w, r)
 	}))
-	return mux
+	// 비공개 밴드에서 나온 요약을 싣는 사이트라서 검색엔진이 수집하지 않게 한다.
+	mux.HandleFunc("GET /robots.txt", func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("User-agent: *\nDisallow: /\n"))
+	})
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Robots-Tag", "noindex, nofollow")
+		mux.ServeHTTP(w, r)
+	})
 }
 
 func page(r *http.Request) int {

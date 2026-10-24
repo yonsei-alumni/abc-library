@@ -116,7 +116,7 @@ func run(ctx context.Context, log *slog.Logger, args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := band.InstallBrowser(); err != nil {
+	if err := band.InstallHeadlessBrowser(); err != nil {
 		return err
 	}
 	crawler, err := band.Open(statePath(), config.Get("BAND_NO", "102765569"))

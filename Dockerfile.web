@@ -1,0 +1,15 @@
+# 웹 서버 이미지. 템플릿과 정적 파일은 바이너리에 포함되어 있어서 바이너리 하나만 담는다.
+FROM golang:1.27.3-bookworm AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+# timetzdata 태그로 시간대 정보(Asia/Seoul)를 바이너리에 넣는다.
+RUN CGO_ENABLED=0 go build -trimpath -tags timetzdata -ldflags="-s -w" -o /out/web ./cmd/web
+
+FROM gcr.io/distroless/static-debian13:nonroot
+COPY --from=build /out/web /web
+ENV PORT=8080
+EXPOSE 8080
+USER nonroot:nonroot
+ENTRYPOINT ["/web"]
