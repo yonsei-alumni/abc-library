@@ -12,6 +12,8 @@ BATCH_REGION=asia-northeast3 # 서울. 밴드 세션이 한국 IP에서 쓰이�
 REPO=abc-library
 
 WEB_SERVICE=abc-library
+# Firebase Hosting 사이트. https://abc-library.web.app이 웹 서비스로 요청을 넘긴다.
+FIREBASE_SITE=abc-library
 BATCH_JOB=abc-batch
 SCHEDULER_JOB=abc-batch-daily
 

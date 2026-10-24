@@ -1,5 +1,5 @@
 .PHONY: fmt lint test check ci test-integration web migrate band-login batch status \
-	gcp-setup gcp-schedule band-secret deploy-web deploy-batch
+	gcp-setup gcp-schedule band-secret deploy-web deploy-batch firebase-hosting
 
 fmt:
 	goimports -w .
@@ -51,3 +51,7 @@ deploy-web:
 
 deploy-batch:
 	scripts/deploy.sh batch
+
+# https://abc-library.web.app을 웹 서비스에 연결한다. rewrite 설정을 바꿀 때만 다시 실행한다.
+firebase-hosting:
+	scripts/firebase-hosting.sh
