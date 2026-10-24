@@ -4,13 +4,6 @@
 
 ![ABC 도서관 인프라 구성](architecture.drawio.svg)
 
-그림은 draw.io 파일이다. `architecture.drawio.svg`를 draw.io에서 바로 열어 고칠 수 있다.
-원본 `architecture.drawio`를 고친 뒤에는 다음 명령으로 그림을 다시 만든다.
-
-```bash
-drawio -x -f svg --embed-diagram -o docs/architecture.drawio.svg docs/architecture.drawio
-```
-
 ## 구성 요소의 역할
 
 | 구성 요소 | 역할 |
@@ -69,7 +62,7 @@ Claude의 답을 그대로 믿지 않고 코드가 검증한다.
 
 ### 애플리케이션
 
-- **Go 1.27**: 웹 서버(`cmd/web`)와 일일 배치(`cmd/batch`)를 같은 저장소에서 만든다.
+- **Go 1.27**: 웹 서버(`cmd/web`)와 일일 배치(`cmd/batch`)
 - **웹 화면**: 표준 라이브러리 `net/http`와 `html/template`으로 서버에서 HTML을 그린다. 상호작용은 **HTMX**로 처리하고, SPA 프레임워크나 JS 빌드 도구는 쓰지 않는다. 템플릿과 정적 파일은 바이너리에 포함한다.
 - **DB 접근**: **Bun** ORM과 pgx 드라이버로 PostgreSQL에 접근한다. 스키마는 Bun 마이그레이션 파일로 관리하고, 배치가 실행될 때 적용한다.
 - **밴드 수집**: **playwright-go**로 headless Chromium을 띄워 밴드 웹 화면을 읽는다.
