@@ -87,7 +87,7 @@ func TestExtractWithClaude(t *testing.T) {
 	}
 }
 
-// 여러 권으로 된 책은 한 권만 넣고, 그 책과 직접 관련 없는 링크는 빼는지 본다.
+// 여러 권으로 된 책은 언급마다 하나만 넣고(짚은 권 또는 세트), 그 책과 직접 관련 없는 링크는 빼는지 본다.
 func TestExtractSeriesAndUnrelatedLinksWithClaude(t *testing.T) {
 	client, err := NewClient()
 	if err != nil {
@@ -121,9 +121,6 @@ func TestExtractSeriesAndUnrelatedLinksWithClaude(t *testing.T) {
 		for _, m := range f.Mentions {
 			t.Logf("  [%s] 링크: %+v", m.Kind, m.Links)
 		}
-		if strings.Contains(f.Book.Title, "세트") || strings.Contains(f.Book.Title, "전") && strings.Contains(f.Book.Title, "권") {
-			t.Errorf("세트 상품을 고르면 안 된다: %+v", f.Book)
-		}
 		switch {
 		case strings.Contains(f.Book.Title, "몬스터"):
 			monsters = append(monsters, f)
@@ -134,13 +131,14 @@ func TestExtractSeriesAndUnrelatedLinksWithClaude(t *testing.T) {
 	if len(monsters) != 1 {
 		t.Fatalf("언급 하나가 1, 2권을 함께 다루면 한 권만 넣어야 한다: %d권", len(monsters))
 	}
-	if title := monsters[0].Book.Title; strings.Contains(title, "2") {
-		t.Errorf("여러 권을 함께 다루면 앞선 권을 골라야 한다: %s", title)
+	if title := monsters[0].Book.Title; strings.Contains(title, "2") || strings.Contains(title, "세트") {
+		t.Errorf("여러 권을 짚어 다루면 앞선 낱권을 골라야 한다: %s", title)
 	}
 	if links := monsters[0].Mentions[0].Links; len(links) != 1 || !strings.Contains(links[0].URL, "monster-review") {
 		t.Errorf("그 책의 감상 링크만 남고 지도와 다른 주제 기사는 빠져야 한다: %+v", links)
 	}
-	if len(reapers) != 1 {
-		t.Errorf("댓글에서 소개한 시리즈를 한 권으로 넣어야 한다: %d권", len(reapers))
+	// 교보문고에 '수확자 시리즈 세트'가 있다.
+	if len(reapers) != 1 || !strings.Contains(reapers[0].Book.Title, "세트") || !book.ValidISBN13(reapers[0].Book.ISBN13) {
+		t.Errorf("시리즈를 통째로 다루면 세트 ISBN으로 한 번만 넣어야 한다: %+v", reapers)
 	}
 }
