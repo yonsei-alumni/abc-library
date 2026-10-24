@@ -1,0 +1,15 @@
+version: "2"
+
+run:
+  build-tags:
+    - integration
+
+linters:
+  default: standard
+  enable:
+    - misspell
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

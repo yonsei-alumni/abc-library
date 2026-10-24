@@ -1,0 +1,31 @@
+{{define "content"}}
+<h1 class="page-title">최근 소식</h1>
+{{if .Entries}}
+<ol class="timeline">
+{{template "timeline-items" .}}
+</ol>
+{{else}}
+<p class="empty">아직 등록된 책이 없습니다.</p>
+{{end}}
+{{end}}
+
+{{define "timeline-items"}}
+{{range .Entries}}
+<li class="entry">
+  <time class="entry-date" datetime="{{isoDate .PostedAt}}">{{date .PostedAt}}</time>
+  <a class="entry-card" href="/books/{{.Book.ID}}">
+    {{template "cover" .Book}}
+    <span class="entry-body">
+      <span class="badge {{if .IsNew}}badge-new{{end}}">{{if .IsNew}}새 책{{else}}이야기 추가{{end}}</span>
+      <span class="entry-title">{{.Book.Title}}</span>
+      <span class="entry-authors">{{authors .Book.Authors}}</span>
+    </span>
+  </a>
+</li>
+{{end}}
+{{if .NextPage}}
+<li class="more-row" id="timeline-more">
+  <button class="more" hx-get="/?page={{.NextPage}}" hx-target="#timeline-more" hx-swap="outerHTML">더 보기</button>
+</li>
+{{end}}
+{{end}}

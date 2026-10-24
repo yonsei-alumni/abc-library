@@ -1,0 +1,23 @@
+{{define "content"}}
+<h1 class="page-title">태그</h1>
+{{if or .Topics .Others}}
+{{if .Topics}}
+<section class="tag-group">
+  <h2>모임 주제</h2>
+  <ul class="counts">
+  {{range .Topics}}<li><a class="tag-topic" href="/books?tag={{.Name}}">#{{.Name}} <span class="count">{{.Books}}</span></a></li>{{end}}
+  </ul>
+</section>
+{{end}}
+{{if .Others}}
+<section class="tag-group">
+  <h2>그 밖의 태그</h2>
+  <ul class="counts">
+  {{range .Others}}<li><a href="/books?tag={{.Name}}">#{{.Name}} <span class="count">{{.Books}}</span></a></li>{{end}}
+  </ul>
+</section>
+{{end}}
+{{else}}
+<p class="empty">아직 등록된 책이 없습니다.</p>
+{{end}}
+{{end}}

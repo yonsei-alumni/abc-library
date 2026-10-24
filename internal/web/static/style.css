@@ -1,0 +1,131 @@
+:root {
+  --paper: #faf7f1;
+  --card: #ffffff;
+  --ink: #1f1c18;
+  --muted: #6d665c;
+  --line: #e6dfd3;
+  --accent: #0b3a75;
+  --accent-soft: #e7eef8;
+  --new: #b4441f;
+  --radius: 10px;
+  --shadow: 0 1px 2px rgba(31, 28, 24, .08), 0 4px 14px rgba(31, 28, 24, .06);
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper: #17171a;
+    --card: #212126;
+    --ink: #ece8e1;
+    --muted: #a29b90;
+    --line: #34343a;
+    --accent: #8fb4ec;
+    --accent-soft: #24324a;
+    --new: #f08b63;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .4);
+    color-scheme: dark;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--ink);
+  font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", "Noto Sans KR", "Malgun Gothic", sans-serif;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+a { color: inherit; }
+
+.wrap { max-width: 960px; margin: 0 auto; padding: 0 16px; }
+
+.site-header { border-bottom: 1px solid var(--line); background: var(--card); }
+.site-header .wrap { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 60px; flex-wrap: wrap; }
+.brand { font-weight: 700; font-size: 1.15rem; text-decoration: none; letter-spacing: -.01em; }
+.brand-mark { display: inline-block; background: var(--accent); color: var(--card); border-radius: 6px; padding: 0 .4em; margin-right: .15em; font-family: Georgia, "Times New Roman", serif; letter-spacing: .04em; }
+.nav { display: flex; gap: 4px; }
+.nav a { text-decoration: none; padding: 6px 12px; border-radius: 999px; color: var(--muted); }
+.nav a[aria-current="page"], .nav a:hover { background: var(--accent-soft); color: var(--accent); }
+.search { flex: 1 1 220px; max-width: 360px; }
+.search input { width: 100%; font: inherit; font-size: .95rem; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); }
+.search input:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+
+main.wrap { padding-top: 28px; padding-bottom: 48px; min-height: 60vh; }
+.page-title { font-size: 1.6rem; margin: 0 0 20px; letter-spacing: -.02em; }
+.empty, .filter-note { color: var(--muted); }
+
+.cover { display: block; width: 100%; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 4px; background: var(--line); box-shadow: var(--shadow); }
+.cover-blank { display: flex; align-items: center; justify-content: center; padding: 10px; text-align: center; font-size: .8rem; color: var(--muted); background: linear-gradient(160deg, var(--accent-soft), var(--line)); }
+
+/* 타임라인 */
+.timeline { list-style: none; margin: 0; padding: 0; }
+.entry { display: grid; grid-template-columns: 7.5em 1fr; gap: 16px; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.entry-date { color: var(--muted); font-size: .9rem; padding-top: 4px; }
+.entry-card { display: grid; grid-template-columns: 64px 1fr; gap: 14px; text-decoration: none; align-items: start; }
+.entry-body { display: flex; flex-direction: column; gap: 2px; }
+.entry-title { font-weight: 650; font-size: 1.05rem; }
+.entry-card:hover .entry-title { color: var(--accent); }
+.entry-authors { color: var(--muted); font-size: .92rem; }
+.badge { align-self: flex-start; font-size: .75rem; padding: 1px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+.badge-new { background: color-mix(in srgb, var(--new) 14%, transparent); color: var(--new); }
+
+/* 책 목록 */
+.shelf { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 28px 20px; }
+.card a { display: flex; flex-direction: column; gap: 4px; text-decoration: none; }
+.card .cover { margin-bottom: 6px; transition: transform .15s ease; }
+.card a:hover .cover { transform: translateY(-3px); }
+.card-title { font-weight: 650; line-height: 1.35; }
+.card-authors, .card-meta { color: var(--muted); font-size: .85rem; line-height: 1.4; }
+
+.more-row { list-style: none; grid-column: 1 / -1; text-align: center; padding: 20px 0; border: 0; display: block; }
+.more { font: inherit; padding: 8px 24px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; }
+.more:hover { border-color: var(--accent); color: var(--accent); }
+.htmx-request.more { opacity: .6; }
+
+/* 책 상세 */
+.book-head { display: grid; grid-template-columns: 200px 1fr; gap: 28px; align-items: start; margin-bottom: 36px; }
+.book-title { font-size: 1.7rem; line-height: 1.3; margin: 0 0 8px; letter-spacing: -.02em; }
+.book-authors, .book-publisher { margin: 0 0 4px; color: var(--muted); }
+.book-authors a { color: var(--ink); }
+.tags { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; padding: 0; margin: 12px 0 18px; }
+.tags a { display: inline-block; text-decoration: none; font-size: .85rem; padding: 2px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+.buy { display: inline-block; text-decoration: none; padding: 9px 18px; border-radius: 8px; background: var(--accent); color: var(--card); font-weight: 600; }
+.buy:hover { filter: brightness(1.1); }
+
+.tags a.tag-topic, .counts a.tag-topic { background: var(--accent); color: var(--card); }
+.counts a.tag-topic .count { color: inherit; opacity: .75; }
+
+.mentions h2 { font-size: 1.15rem; margin: 0 0 12px; }
+.threads, .replies { list-style: none; margin: 0; padding: 0; }
+.threads { display: flex; flex-direction: column; gap: 14px; }
+.thread { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 18px; }
+.mention-meta { margin: 0; color: var(--muted); font-size: .85rem; display: flex; align-items: center; gap: 8px; }
+.kind { font-size: .75rem; padding: 1px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+.kind-comment { background: var(--line); color: var(--muted); }
+.summary { white-space: pre-line; margin: 6px 0 10px; }
+.replies { margin: 4px 0 8px; border-left: 3px solid var(--line); padding-left: 14px; display: flex; flex-direction: column; gap: 10px; }
+.thread > .replies:first-child { margin-top: 0; }
+.mention-comment .summary { margin-bottom: 4px; font-size: .95rem; }
+.links { margin: 0 0 8px; padding-left: 1.1em; font-size: .92rem; }
+.links a { color: var(--accent); }
+.origin { font-size: .85rem; color: var(--muted); }
+
+/* 태그, 저자 */
+.tag-group { margin-bottom: 28px; }
+.tag-group h2 { font-size: 1rem; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+.counts { list-style: none; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.counts a { display: inline-flex; align-items: center; gap: 8px; text-decoration: none; padding: 6px 14px; border-radius: 999px; background: var(--card); border: 1px solid var(--line); }
+.counts a:hover { border-color: var(--accent); color: var(--accent); }
+.count { font-size: .8rem; color: var(--muted); }
+
+.site-footer { border-top: 1px solid var(--line); color: var(--muted); font-size: .85rem; padding: 20px 0 32px; }
+
+@media (max-width: 600px) {
+  .entry { grid-template-columns: 1fr; gap: 6px; }
+  .book-head { grid-template-columns: 120px 1fr; gap: 16px; }
+  .book-title { font-size: 1.3rem; }
+  .shelf { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 22px 14px; }
+}

@@ -1,0 +1,10 @@
+{{define "content"}}
+<h1 class="page-title">저자</h1>
+{{if .Counts}}
+<ul class="counts">
+{{range .Counts}}<li><a href="/books?author={{.Name}}">{{.Name}} <span class="count">{{.Books}}</span></a></li>{{end}}
+</ul>
+{{else}}
+<p class="empty">아직 등록된 책이 없습니다.</p>
+{{end}}
+{{end}}

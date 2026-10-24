@@ -1,0 +1,178 @@
+// batch는 일일 배치와 그 준비 작업을 실행한다.
+//
+//	batch migrate   DB 스키마를 최신으로 올린다.
+//	batch login     브라우저 창을 띄워 밴드에 로그인하고 세션을 저장한다.
+//	batch run       새 글, 지난번에 처리하지 못한 글, 최근 글을 처리한다.
+//	batch status    최근 실행 기록과 다시 시도할 글을 보여 준다.
+package main
+
+import (
+	"context"
+	"flag"
+	"fmt"
+	"log/slog"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/yonsei-alumni/abc-library/internal/band"
+	"github.com/yonsei-alumni/abc-library/internal/config"
+	"github.com/yonsei-alumni/abc-library/internal/extract"
+	"github.com/yonsei-alumni/abc-library/internal/kyobo"
+	"github.com/yonsei-alumni/abc-library/internal/pipeline"
+	"github.com/yonsei-alumni/abc-library/internal/store"
+)
+
+func main() {
+	log := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	if len(os.Args) < 2 {
+		usage()
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, os.Interrupt)
+	defer stop()
+
+	var err error
+	switch os.Args[1] {
+	case "migrate":
+		err = migrate(ctx, log)
+	case "login":
+		err = login()
+	case "run":
+		err = run(ctx, log, os.Args[2:])
+	case "status":
+		err = status(ctx, log)
+	default:
+		usage()
+	}
+	if err != nil {
+		log.Error("배치 실패", "명령", os.Args[1], "오류", err)
+		os.Exit(1)
+	}
+}
+
+func usage() {
+	fmt.Fprintln(os.Stderr, "사용법: batch <migrate|login|run|status> [-limit N] [-recheck-days N] [-redo-from N]")
+	os.Exit(2)
+}
+
+func statePath() string {
+	return config.Get("BAND_STATE_PATH", "band-state.json")
+}
+
+func openStore(ctx context.Context, log *slog.Logger) (*store.Store, error) {
+	dsn, err := config.DatabaseURL()
+	if err != nil {
+		return nil, err
+	}
+	st, err := store.Open(dsn)
+	if err != nil {
+		return nil, err
+	}
+	applied, err := st.Migrate(ctx)
+	if err != nil {
+		_ = st.Close()
+		return nil, err
+	}
+	if applied != "" {
+		log.Info("마이그레이션 적용", "묶음", applied)
+	}
+	return st, nil
+}
+
+func migrate(ctx context.Context, log *slog.Logger) error {
+	st, err := openStore(ctx, log)
+	if err != nil {
+		return err
+	}
+	return st.Close()
+}
+
+func login() error {
+	if err := band.InstallBrowser(); err != nil {
+		return err
+	}
+	if err := band.Login(statePath(), 10*time.Minute); err != nil {
+		return err
+	}
+	fmt.Printf("세션을 %s에 저장했습니다. 이 파일은 비밀번호처럼 다루세요.\n", statePath())
+	return nil
+}
+
+func run(ctx context.Context, log *slog.Logger, args []string) error {
+	fs := flag.NewFlagSet("run", flag.ExitOnError)
+	limit := fs.Int("limit", 30, "한 번에 Claude로 추출할 게시글 수의 상한(0이면 제한 없음)")
+	recheckDays := fs.Int("recheck-days", 7, "수정된 본문과 새 댓글을 다시 확인할 최근 게시글의 기간(일)")
+	redoFrom := fs.Int("redo-from", 0, "이 번호부터는 이미 저장한 글도 다시 추출한다(프롬프트를 바꾼 뒤에 쓴다)")
+	_ = fs.Parse(args)
+
+	st, err := openStore(ctx, log)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = st.Close() }()
+
+	client, err := extract.NewClient()
+	if err != nil {
+		return err
+	}
+	if err := band.InstallBrowser(); err != nil {
+		return err
+	}
+	crawler, err := band.Open(statePath(), config.Get("BAND_NO", "102765569"))
+	if err != nil {
+		return err
+	}
+	defer func() { _ = crawler.Close() }()
+
+	ex := extract.New(&client.Beta.Messages, kyobo.NewClient())
+	_, err = pipeline.Run(ctx, crawler, ex, st, pipeline.Options{Limit: *limit, RecheckDays: *recheckDays, RedoFrom: *redoFrom}, log)
+	return err
+}
+
+func status(ctx context.Context, log *slog.Logger) error {
+	st, err := openStore(ctx, log)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = st.Close() }()
+
+	last, err := st.LastPostNo(ctx)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("저장된 마지막 글: %d\n\n최근 실행\n", last)
+	runs, err := st.RecentRuns(ctx, 5)
+	if err != nil {
+		return err
+	}
+	for _, r := range runs {
+		finished := "실행 중이거나 비정상 종료"
+		if !r.FinishedAt.IsZero() {
+			finished = r.FinishedAt.Local().Format("2006-01-02 15:04")
+		}
+		fmt.Printf("  #%d %s ~ %s | 글 %d→%d | 확인 %d, 추출 %d, 변경 없음 %d, 없는 글 %d, 실패 %d, 책 %d",
+			r.ID, r.StartedAt.Local().Format("2006-01-02 15:04"), finished, r.LastPostNo, r.LatestPostNo,
+			r.Checked, r.Extracted, r.Unchanged, r.Missing, r.Failed, r.Books)
+		if r.Error != "" {
+			fmt.Printf(" | 오류: %s", r.Error)
+		}
+		fmt.Println()
+	}
+	pending, err := st.PendingPosts(ctx)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("\n다시 시도할 글 (최대 %d번 시도)\n", pipeline.MaxAttempts)
+	if len(pending) == 0 {
+		fmt.Println("  없음")
+	}
+	for _, p := range pending {
+		fmt.Printf("  글 %d | %s | %d번 시도 | %s", p.BandPostNo, p.Reason, p.Attempts, p.LastTriedAt.Local().Format("2006-01-02 15:04"))
+		if p.LastError != "" {
+			fmt.Printf(" | %s", p.LastError)
+		}
+		fmt.Println()
+	}
+	return nil
+}

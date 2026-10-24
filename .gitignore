@@ -1,0 +1,14 @@
+# 밴드 로그인 세션과 비밀 값
+band-state.json
+.env
+.envrc
+.env.*
+!.env.example
+
+# 빌드 산출물
+/bin/
+/dist/
+coverage.out
+
+# 개인용 에이전트 설정
+.claude/settings.local.json

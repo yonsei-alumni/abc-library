@@ -1,0 +1,29 @@
+{{define "content"}}
+<h1 class="page-title">{{.Title}}</h1>
+{{if or .Filter.Tag .Filter.Author .Filter.Query}}<p class="filter-note"><a href="/books">모든 책 보기</a></p>{{end}}
+{{if .Shelf}}
+<ul class="shelf">
+{{template "book-cards" .}}
+</ul>
+{{else}}
+<p class="empty">{{if .Filter.Query}}검색 결과가 없습니다.{{else}}해당하는 책이 없습니다.{{end}}</p>
+{{end}}
+{{end}}
+
+{{define "book-cards"}}
+{{range .Shelf}}
+<li class="card">
+  <a href="/books/{{.Book.ID}}">
+    {{template "cover" .Book}}
+    <span class="card-title">{{.Book.Title}}</span>
+    <span class="card-authors">{{authors .Book.Authors}}</span>
+    <span class="card-meta">게시글 {{.PostCount}}개 · {{date .LastPostedAt}}</span>
+  </a>
+</li>
+{{end}}
+{{if .NextPage}}
+<li class="more-row" id="shelf-more">
+  <button class="more" hx-get="/books?page={{.NextPage}}{{with .Filter.Tag}}&tag={{.}}{{end}}{{with .Filter.Author}}&author={{.}}{{end}}{{with .Filter.Query}}&q={{.}}{{end}}" hx-target="#shelf-more" hx-swap="outerHTML">더 보기</button>
+</li>
+{{end}}
+{{end}}
