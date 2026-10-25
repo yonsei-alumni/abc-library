@@ -116,15 +116,24 @@ echo "== GitHub Actions 배포 권한 =="
 gcloud iam workload-identity-pools describe "$WIF_POOL" --location global --project "$PROJECT" >/dev/null 2>&1 ||
   gcloud iam workload-identity-pools create "$WIF_POOL" --location global --project "$PROJECT" \
     --display-name "GitHub Actions"
-# 저장소와 main 브랜치 조건을 건다. 이 조건이 없으면 다른 저장소나 브랜치의 워크플로도 토큰을 받는다.
-gcloud iam workload-identity-pools providers describe "$WIF_PROVIDER" \
-  --location global --workload-identity-pool "$WIF_POOL" --project "$PROJECT" >/dev/null 2>&1 ||
+# 저장소와 배포 브랜치(release) 조건을 건다. 이 조건이 없으면 다른 저장소나 브랜치의 워크플로도 토큰을 받는다.
+# 공급자가 이미 있으면 조건만 지금 값으로 맞춘다.
+WIF_CONDITION="assertion.repository == '${GITHUB_REPO}' && assertion.ref == 'refs/heads/${DEPLOY_BRANCH}'"
+if gcloud iam workload-identity-pools providers describe "$WIF_PROVIDER" \
+  --location global --workload-identity-pool "$WIF_POOL" --project "$PROJECT" >/dev/null 2>&1; then
+  gcloud iam workload-identity-pools providers update-oidc "$WIF_PROVIDER" \
+    --location global --workload-identity-pool "$WIF_POOL" --project "$PROJECT" \
+    --display-name "abc-library ${DEPLOY_BRANCH}" \
+    --attribute-condition "$WIF_CONDITION" >/dev/null
+else
   gcloud iam workload-identity-pools providers create-oidc "$WIF_PROVIDER" \
     --location global --workload-identity-pool "$WIF_POOL" --project "$PROJECT" \
-    --display-name "abc-library main" \
+    --display-name "abc-library ${DEPLOY_BRANCH}" \
     --issuer-uri "https://token.actions.githubusercontent.com" \
     --attribute-mapping "google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.ref=assertion.ref" \
-    --attribute-condition "assertion.repository == '${GITHUB_REPO}' && assertion.ref == 'refs/heads/main'"
+    --attribute-condition "$WIF_CONDITION"
+fi
+echo "  토큰 조건: ${GITHUB_REPO}의 ${DEPLOY_BRANCH} 브랜치"
 
 gcloud iam service-accounts add-iam-policy-binding "$DEPLOY_SA" --project "$PROJECT" \
   --role roles/iam.workloadIdentityUser \

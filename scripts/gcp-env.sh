@@ -42,6 +42,8 @@ BAND_STATE_MOUNT=/secrets/band/band-state.json
 
 # GitHub Actions가 서비스 계정 키 없이 배포하도록 쓰는 Workload Identity Federation
 GITHUB_REPO=yonsei-alumni/abc-library
+# 이 브랜치에 push된 워크플로만 배포 토큰을 받는다. .github/workflows/ci.yml의 deploy 조건과 맞춘다.
+DEPLOY_BRANCH=release
 WIF_POOL=github
 WIF_PROVIDER=abc-library
 

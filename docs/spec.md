@@ -203,12 +203,18 @@ make firebase-hosting           # https://abc-lib.web.app을 웹 서비스에 �
 
 `make firebase-hosting` 전에 Firebase 콘솔에서 이 프로젝트에 Firebase를 한 번 추가해야 한다(약관 동의와 Blaze 요금제 확인). Firebase 프로젝트를 지우면 GCP 프로젝트 전체가 지워지므로 지우지 않는다.
 
-그 뒤에는 `main`에 push하면 GitHub Actions가 배포한다. 환경 변수와 비밀 값 연결은 서비스와 Job에 남아 있어서 워크플로는 이미지만 바꾼다.
+그 뒤에는 `release` 브랜치에 merge하면 GitHub Actions가 배포한다. `main`에 push하면 린트와 테스트만 돌리고 배포하지 않는다. 환경 변수와 비밀 값 연결은 서비스와 Job에 남아 있어서 워크플로는 이미지만 바꾼다.
+
+```bash
+git push origin main:release    # main을 release로 fast-forward해서 배포(GitHub에서 main → release PR을 merge해도 된다)
+```
+
+GitHub Actions가 GCP 토큰을 받는 Workload Identity Federation 공급자에는 이 저장소의 `release` 브랜치 조건이 걸려 있다. 배포 브랜치를 바꾸면 `scripts/gcp-setup.sh`의 조건도 고치고 `make gcp-setup`을 다시 실행한다.
 
 - 밴드 세션이 만료되면 Job이 실패하고 알림 메일이 온다. `make band-login` 뒤에 `make band-secret`을 실행한다. Job은 비밀의 최신 버전을 읽으므로 다시 배포하지 않아도 된다.
 - Claude API 키를 바꾸려면 `gcloud secrets versions add claude-api-key --data-file=-`로 새 버전을 올린다.
 - 웹 서버는 `robots.txt`와 `X-Robots-Tag: noindex`로 검색엔진 수집을 막는다.
-- 웹 서버는 마이그레이션을 적용하지 않는다. 스키마를 바꾼 코드를 push하기 전에 `make migrate`로 운영 DB에 먼저 적용한다. 그렇지 않으면 배포된 웹 서버가 다음 배치 실행까지 오류를 낸다.
+- 웹 서버는 마이그레이션을 적용하지 않는다. 스키마를 바꾼 코드를 `release`에 merge하기 전에 `make migrate`로 운영 DB에 먼저 적용한다. 그렇지 않으면 배포된 웹 서버가 다음 배치 실행까지 오류를 낸다.
 
 ### 로그인 설정
 
