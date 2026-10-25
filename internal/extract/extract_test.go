@@ -196,7 +196,7 @@ func (f *productSearch) Product(_ context.Context, pid string) (kyobo.Edition, b
 }
 
 func TestExtractUsesLinkedKyoboProduct(t *testing.T) {
-	linked := kyobo.Edition{PID: "S000213812009", ISBN13: "9788965966388", Title: "세계 너머의 세계", Authors: []string{"에릭 호엘"}, Publisher: "흐름출판"}
+	linked := kyobo.Edition{PID: "S000213812009", Barcode: "9788965966388", ISBN13: "9788965966388", Title: "세계 너머의 세계", Authors: []string{"에릭 호엘"}, Publisher: "흐름출판"}
 	search := &productSearch{results: map[string][]kyobo.Edition{
 		// 상품 번호로 검색하면 다른 상품이 함께 나와도 상품 번호가 같은 것만 쓴다.
 		"S000213812009": {{PID: "S000000000001", ISBN13: "9791160077834", Title: "트렌드 너머의 세계"}, linked},
@@ -231,8 +231,8 @@ func TestExtractUsesLinkedKyoboProduct(t *testing.T) {
 		t.Errorf("검색어 = %v", search.queries)
 	}
 	if b := got[0].Book; b.KyoboPID != "S000213812009" || b.ISBN13 != "9788965966388" || b.Title != "세계 너머의 세계" ||
-		b.Publisher != "흐름출판" || !slices.Equal(b.Authors, []string{"에릭 호엘"}) {
-		t.Errorf("링크의 상품을 써야 한다: %+v", b)
+		b.Publisher != "흐름출판" || !slices.Equal(b.Authors, []string{"에릭 호엘"}) || b.KyoboBarcode != "" {
+		t.Errorf("링크의 상품을 쓰고, ISBN과 같은 바코드는 따로 두지 않아야 한다: %+v", b)
 	}
 	// 찾지 못한 상품의 ISBN은 검색 결과에 없었으므로 버린다.
 	if b := got[1].Book; b.ISBN13 != "" || b.KyoboPID != "" {

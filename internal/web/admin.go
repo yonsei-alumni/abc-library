@@ -331,8 +331,9 @@ func (s *Server) saveBook(w http.ResponseWriter, r *http.Request) {
 		s.renderBook(w, r, http.StatusBadRequest, f)
 		return
 	}
-	// 교보문고 표지는 상품 번호가 아니라 바코드로 찾는다. ISBN이 없는 상품은 상품 번호로 바코드를 찾아 둔다.
-	if b.ISBN13 == "" && b.KyoboPID != "" && s.products != nil {
+	// 교보문고 표지는 상품 번호가 아니라 바코드로 찾는다. ISBN이 없는 상품과, ISBN이 있어도 바코드가 다른 전자책은
+	// 상품 번호로 바코드를 찾아 둔다.
+	if b.KyoboPID != "" && (b.ISBN13 == "" || strings.HasPrefix(b.KyoboPID, "E")) && s.products != nil {
 		ed, found, err := s.products.Product(r.Context(), b.KyoboPID)
 		switch {
 		case err != nil:
@@ -345,7 +346,9 @@ func (s *Server) saveBook(w http.ResponseWriter, r *http.Request) {
 			s.renderBook(w, r, http.StatusBadRequest, f)
 			return
 		}
-		b.KyoboBarcode = ed.Barcode
+		if ed.Barcode != b.ISBN13 {
+			b.KyoboBarcode = ed.Barcode
+		}
 	}
 	if newTag != "" {
 		name, err := s.ensureTag(r, book.Tag{Name: newTag, Topic: f.NewTagTopic})

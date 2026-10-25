@@ -304,7 +304,7 @@ func (e *Extractor) parseResult(resp *anthropic.BetaMessage, in Input, seen, lin
 		}
 		if ok {
 			b.ISBN13, b.Title, b.Publisher, b.KyoboPID = ed.ISBN13, ed.Title, ed.Publisher, ed.PID
-			if ed.ISBN13 == "" {
+			if ed.Barcode != ed.ISBN13 {
 				b.KyoboBarcode = ed.Barcode
 			}
 			if len(ed.Authors) > 0 {

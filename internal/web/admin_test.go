@@ -53,6 +53,8 @@ func (f *fakeProducts) Product(_ context.Context, pid string) (kyobo.Edition, bo
 		return kyobo.Edition{}, false, errors.New("교보문고 응답 코드 503")
 	case pid == "S000221152938":
 		return kyobo.Edition{PID: pid, Barcode: "3904000631271", Title: "스켑틱(Skeptic)(47호)"}, true, nil
+	case pid == "E000003412895":
+		return kyobo.Edition{PID: pid, Barcode: "480D180102360", Title: "아스타틴"}, true, nil
 	}
 	return kyobo.Edition{}, false, nil
 }
@@ -608,6 +610,15 @@ func TestAdminBookFillsBarcodeForProductWithoutISBN(t *testing.T) {
 	}
 	assertContains(t, rec.Body.String(), "교보문고에 연결하지 못했습니다")
 	expectCalls(t, a.st)
+
+	// 전자책은 ISBN이 있어도 바코드가 달라서 찾는다.
+	ebook := form("E000003412895")
+	ebook.Set("isbn13", "9791187540472")
+	expectRedirect(t, a.post("/admin/books/1", ebook, admin), "/admin/books/1?done=book-saved")
+	if b := a.st.updated; b.ISBN13 != "9791187540472" || b.KyoboBarcode != "480D180102360" {
+		t.Errorf("전자책은 ISBN이 있어도 바코드를 저장해야 한다: %+v", b)
+	}
+	expectCalls(t, a.st, "UpdateBook 1")
 
 	// 상품 번호가 없으면 찾지 않는다.
 	a.products.pids = nil

@@ -126,7 +126,9 @@ func TestCoverCode(t *testing.T) {
 		b    Book
 		want string
 	}{
-		{Book{ISBN13: "9791196914806", KyoboBarcode: "3904000631271"}, "9791196914806"},
+		{Book{ISBN13: "9791196914806"}, "9791196914806"},
+		// 전자책은 ISBN이 있어도 전자책 바코드로 표지를 찾는다.
+		{Book{ISBN13: "9791187540472", KyoboBarcode: "480D180102360", KyoboPID: "E000003412895"}, "480D180102360"},
 		{Book{KyoboBarcode: "3904000631271", KyoboPID: "S000221152938"}, "3904000631271"},
 		// 상품 번호만 있으면 표지를 찾을 수 없다.
 		{Book{KyoboPID: "S000221152938"}, ""},
