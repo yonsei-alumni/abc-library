@@ -85,6 +85,7 @@ func (c *Client) wait() {
 
 var (
 	itemStart = regexp.MustCompile(`<li class="prod_item"`)
+	comment   = regexp.MustCompile(`(?s)<!--.*?-->`)
 	pidRe     = regexp.MustCompile(`data-pid="([A-Z]\d+)"`)
 	bidRe     = regexp.MustCompile(`data-bid="(\d+)"`)
 	titleRe   = regexp.MustCompile(`<span id="cmdtName_[A-Z]\d+">([^<]+)</span>`)
@@ -104,7 +105,8 @@ func ParseSearch(page string) []Edition {
 		if i+1 < len(starts) {
 			end = starts[i+1][0]
 		}
-		item := page[s[0]:end]
+		// 저자 이름과 역할 사이에 HTML 주석이 끼어 있어서 주석을 먼저 지운다.
+		item := comment.ReplaceAllString(page[s[0]:end], "")
 		ed := Edition{
 			PID:       first(pidRe, item),
 			ISBN13:    first(bidRe, item),
@@ -143,6 +145,22 @@ func isAuthorRole(role string) bool {
 		}
 	}
 	return false
+}
+
+var productPath = regexp.MustCompile(`^/detail/([A-Z]\d+)/?$`)
+
+// ProductPID는 교보문고 상품 페이지 주소(https://product.kyobobook.co.kr/detail/S000001981838)의 상품 번호다.
+// 상품 페이지 주소가 아니면 ok가 거짓이다.
+func ProductPID(raw string) (pid string, ok bool) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || !strings.EqualFold(u.Hostname(), "product.kyobobook.co.kr") {
+		return "", false
+	}
+	m := productPath.FindStringSubmatch(u.Path)
+	if m == nil {
+		return "", false
+	}
+	return m[1], true
 }
 
 // ProductURL은 교보문고 상품 페이지 주소다.

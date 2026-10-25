@@ -81,6 +81,31 @@ func TestSearchSendsQueryAndFailsOnBadStatus(t *testing.T) {
 	}
 }
 
+func TestProductPID(t *testing.T) {
+	for raw, want := range map[string]string{
+		"https://product.kyobobook.co.kr/detail/S000213812009":                   "S000213812009",
+		"http://product.kyobobook.co.kr/detail/S000213812009/":                   "S000213812009",
+		"https://PRODUCT.kyobobook.co.kr/detail/S000213812009?utm_source=band#x": "S000213812009",
+		" https://product.kyobobook.co.kr/detail/S000213812009 ":                 "S000213812009",
+		// 상품 페이지가 아닌 주소와 잘못된 상품 번호는 뺀다.
+		"https://product.kyobobook.co.kr/detail/":                           "",
+		"https://product.kyobobook.co.kr/detail/s000213812009":              "",
+		"https://product.kyobobook.co.kr/detail/S000213812009/review":       "",
+		"https://product.kyobobook.co.kr/book/S000213812009":                "",
+		"https://ebook-product.kyobobook.co.kr/dig/epd/ebook/E000002956543": "",
+		"https://search.kyobobook.co.kr/search?keyword=S000213812009":       "",
+		"https://product.kyobobook.co.kr.example.com/detail/S000213812009":  "",
+		"javascript://product.kyobobook.co.kr/detail/S000213812009":         "",
+		"https://www.yes24.com/Product/Goods/1":                             "",
+		"":                                                                  "",
+	} {
+		pid, ok := ProductPID(raw)
+		if pid != want || ok != (want != "") {
+			t.Errorf("ProductPID(%q) = %q, %v, want %q", raw, pid, ok, want)
+		}
+	}
+}
+
 func TestURLs(t *testing.T) {
 	if got := ProductURL("S000001981838"); got != "https://product.kyobobook.co.kr/detail/S000001981838" {
 		t.Error(got)

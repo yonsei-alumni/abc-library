@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/url"
 	"slices"
 	"strings"
@@ -126,7 +127,8 @@ func TestExtractBuildsMentionsAndAttachesLinks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(search.queries) != 1 || len(got) != 2 {
+	// 본문의 교보문고 상품 링크를 상품 번호로 먼저 찾고, Claude가 제목으로 한 번 더 검색한다.
+	if !slices.Equal(search.queries, []string{"S000001981838", "당신 인생의 이야기 테드 창"}) || len(got) != 2 {
 		t.Fatalf("검색 %v, 찾은 책 %+v", search.queries, got)
 	}
 
@@ -158,6 +160,96 @@ func TestExtractBuildsMentionsAndAttachesLinks(t *testing.T) {
 
 	if n := len(api.calls[1].Messages); n != 3 {
 		t.Errorf("두 번째 요청에는 사용자, 도구 호출, 도구 결과가 있어야 한다: %d", n)
+	}
+}
+
+// productSearch는 검색어마다 정해 둔 결과를 돌려준다. 없는 검색어는 빈 결과다.
+type productSearch struct {
+	results map[string][]kyobo.Edition
+	queries []string
+}
+
+func (f *productSearch) Search(_ context.Context, q string) ([]kyobo.Edition, error) {
+	f.queries = append(f.queries, q)
+	if q == "오류" || strings.HasPrefix(q, "S9") {
+		return nil, errors.New("교보문고 응답 코드 503")
+	}
+	return f.results[q], nil
+}
+
+func TestExtractUsesLinkedKyoboProduct(t *testing.T) {
+	linked := kyobo.Edition{PID: "S000213812009", ISBN13: "9788965966388", Title: "세계 너머의 세계", Authors: []string{"에릭 호엘"}, Publisher: "흐름출판"}
+	search := &productSearch{results: map[string][]kyobo.Edition{
+		// 상품 번호로 검색하면 다른 상품이 함께 나와도 상품 번호가 같은 것만 쓴다.
+		"S000213812009": {{PID: "S000000000001", ISBN13: "9791160077834", Title: "트렌드 너머의 세계"}, linked},
+		// 제목으로 검색해서 같은 ISBN이 다른 상품 번호로 나와도 링크의 상품 번호를 쓴다.
+		"세계 너머의 세계": {{PID: "S000000000002", ISBN13: "9788965966388", Title: "세계 너머의 세계(큰글자책)"}},
+	}}
+	in := Input{
+		PostedAt: postedAt,
+		Text:     "이번 달 과학 모임 책",
+		Links:    []book.Link{{URL: "https://product.kyobobook.co.kr/detail/S000213812009", Title: "세계 너머의 세계 | 교보문고"}},
+		Comments: []Comment{
+			// 같은 상품을 다시 걸면 한 번만 찾는다. 찾다가 실패한 상품과 찾지 못한 상품은 정보를 붙이지 않는다.
+			{At: commentedAt, Text: "저도 샀어요", Links: []book.Link{
+				{URL: "https://product.kyobobook.co.kr/detail/S000213812009/"},
+				{URL: "https://product.kyobobook.co.kr/detail/S900000000000", Title: "실패"},
+				{URL: "https://product.kyobobook.co.kr/detail/S000000000404", Title: "없음"},
+			}},
+		},
+	}
+	story := found("세계 너머의 세계", "9788965966388", []string{"과학"}, "요약", nil, m{"comment": 1, "summary": "구매"})
+	failed := found("실패한 상품", "9788900000001", []string{}, "", nil, m{"comment": 1, "summary": "실패"})
+	api := &fakeAPI{responses: []string{
+		message("tool_use", `{"type":"tool_use","id":"tu_1","name":"search_kyobo","input":{"query":"세계 너머의 세계"}}`),
+		message("end_turn", textBlock(m{"books": []m{story, failed}})),
+	}}
+
+	got, err := New(api, search, testTags).Extract(context.Background(), in)
+	if err != nil || len(got) != 2 {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+	if !slices.Equal(search.queries, []string{"S000213812009", "S900000000000", "S000000000404", "세계 너머의 세계"}) {
+		t.Errorf("검색어 = %v", search.queries)
+	}
+	if b := got[0].Book; b.KyoboPID != "S000213812009" || b.ISBN13 != "9788965966388" || b.Title != "세계 너머의 세계" ||
+		b.Publisher != "흐름출판" || !slices.Equal(b.Authors, []string{"에릭 호엘"}) {
+		t.Errorf("링크의 상품을 써야 한다: %+v", b)
+	}
+	// 찾지 못한 상품의 ISBN은 검색 결과에 없었으므로 버린다.
+	if b := got[1].Book; b.ISBN13 != "" || b.KyoboPID != "" {
+		t.Errorf("찾지 못한 상품의 ISBN은 버려야 한다: %+v", b)
+	}
+	req, _ := json.Marshal(api.calls[0])
+	body := string(req)
+	if !strings.Contains(body, "[1] 세계 너머의 세계 | 교보문고 https://product.kyobobook.co.kr/detail/S000213812009 → 교보문고 상품: isbn13 9788965966388, 세계 너머의 세계, 에릭 호엘, 흐름출판") ||
+		!strings.Contains(body, "링크 [2]  https://product.kyobobook.co.kr/detail/S000213812009/ → 교보문고 상품: isbn13 9788965966388") {
+		t.Errorf("상품 링크 뒤에 판본 정보를 붙여야 한다: %s", body)
+	}
+	for _, unwanted := range []string{"S900000000000 →", "S000000000404 →", "트렌드 너머의 세계"} {
+		if strings.Contains(body, unwanted) {
+			t.Errorf("요청에 %q가 있으면 안 된다", unwanted)
+		}
+	}
+	// 상품 링크는 서점 링크라서 언급에 붙이지 않는다.
+	if l := got[0].Mentions[0].Links; len(l) != 0 {
+		t.Errorf("본문 링크 = %+v", l)
+	}
+}
+
+func TestExtractLimitsLinkedProductLookups(t *testing.T) {
+	var links []book.Link
+	for i := range maxLinkedProducts + 3 {
+		links = append(links, book.Link{URL: fmt.Sprintf("https://product.kyobobook.co.kr/detail/S%012d", i+1)})
+	}
+	search := &productSearch{}
+	api := &fakeAPI{responses: []string{message("end_turn", textBlock(m{"books": []any{}}))}}
+	in := Input{PostedAt: postedAt, Text: "책 목록", Links: links}
+	if _, err := New(api, search, testTags).Extract(context.Background(), in); err != nil {
+		t.Fatal(err)
+	}
+	if len(search.queries) != maxLinkedProducts {
+		t.Errorf("상품 번호 검색은 %d번까지만 해야 한다: %v", maxLinkedProducts, search.queries)
 	}
 }
 

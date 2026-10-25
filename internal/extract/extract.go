@@ -1,5 +1,6 @@
 // Package extract는 Claude로 밴드 게시글과 댓글에서 책을 찾고, 개인 정보를 뺀 언급 요약을 만든다.
 // Claude가 교보문고 검색 도구로 ISBN을 고르고, 코드는 검색 결과에 실제로 있었던 ISBN만 받아들인다.
+// 글에 교보문고 상품 링크가 있으면 코드가 그 상품을 먼저 찾아서 Claude에게 링크와 함께 보여 준다.
 // 언급에 들어 있던 링크는 서점 구매 링크와 Claude가 그 책과 직접 관련이 없다고 판정한 링크만 빼고 코드가 모두 붙인다.
 package extract
 
@@ -26,7 +27,9 @@ const (
 	model         = "claude-opus-5-5"
 	maxTurns      = 8
 	maxCandidates = 8
-	maxTags       = 5
+	// maxLinkedProducts는 글 하나에서 상품 번호로 찾아보는 교보문고 링크 수의 상한이다.
+	maxLinkedProducts = 8
+	maxTags           = 5
 )
 
 // ErrRefused는 Claude가 게시글 처리를 거절했다는 뜻이다.
@@ -101,8 +104,13 @@ type result struct {
 
 // Extract는 게시글(본문과 댓글)에서 찾은 책과, 그 책에 대한 언급 요약을 돌려준다.
 func (e *Extractor) Extract(ctx context.Context, in Input) ([]book.Finding, error) {
+	// 상품 링크의 판본은 검색 결과로 친다. 검색에서 같은 ISBN이 나와도 링크의 상품 번호를 쓴다.
+	linked := e.linkedEditions(ctx, in)
 	seen := map[string]kyobo.Edition{}
-	messages := []anthropic.BetaMessageParam{anthropic.NewBetaUserMessage(userContent(in)...)}
+	for _, ed := range linked {
+		seen[ed.ISBN13] = ed
+	}
+	messages := []anthropic.BetaMessageParam{anthropic.NewBetaUserMessage(userContent(in, linked)...)}
 	for range maxTurns {
 		resp, err := e.api.New(ctx, e.params(messages))
 		if err != nil {
@@ -157,7 +165,36 @@ func (e *Extractor) params(messages []anthropic.BetaMessageParam) anthropic.Beta
 	}
 }
 
-func userContent(in Input) []anthropic.BetaContentBlockParamUnion {
+// linkedEditions는 본문과 댓글의 교보문고 상품 링크가 가리키는 판본을 상품 번호로 찾는다.
+// 상품 번호로 검색하면 그 상품이 나온다. 찾지 못한 링크는 Claude가 평소처럼 제목으로 검색한다.
+func (e *Extractor) linkedEditions(ctx context.Context, in Input) map[string]kyobo.Edition {
+	links := slices.Clone(in.Links)
+	for _, c := range in.Comments {
+		links = append(links, c.Links...)
+	}
+	editions := map[string]kyobo.Edition{}
+	tried := map[string]bool{}
+	for _, l := range links {
+		pid, ok := kyobo.ProductPID(l.URL)
+		if !ok || tried[pid] || len(tried) >= maxLinkedProducts {
+			continue
+		}
+		tried[pid] = true
+		eds, err := e.search.Search(ctx, pid)
+		if err != nil {
+			continue
+		}
+		for _, ed := range eds {
+			if ed.PID == pid {
+				editions[pid] = ed
+				break
+			}
+		}
+	}
+	return editions
+}
+
+func userContent(in Input, linked map[string]kyobo.Edition) []anthropic.BetaContentBlockParamUnion {
 	var blocks []anthropic.BetaContentBlockParamUnion
 	for _, img := range in.Images {
 		blocks = append(blocks, anthropic.NewBetaImageBlock(anthropic.BetaBase64ImageSourceParam{
@@ -171,7 +208,7 @@ func userContent(in Input) []anthropic.BetaContentBlockParamUnion {
 		b.WriteString("(없음)\n")
 	}
 	for i, l := range in.Links {
-		fmt.Fprintf(&b, "[%d] %s %s\n", i+1, l.Title, readableURL(l.URL))
+		fmt.Fprintf(&b, "[%d] %s %s%s\n", i+1, l.Title, readableURL(l.URL), productNote(l, linked))
 	}
 	b.WriteString("\n## 댓글\n")
 	if len(in.Comments) == 0 {
@@ -180,11 +217,21 @@ func userContent(in Input) []anthropic.BetaContentBlockParamUnion {
 	for i, c := range in.Comments {
 		fmt.Fprintf(&b, "[%d] (%s) %s\n", i+1, c.At.Format("2006-01-02"), strings.TrimSpace(c.Text))
 		for j, l := range c.Links {
-			fmt.Fprintf(&b, "    링크 [%d] %s %s\n", commentLinkNo(in, i, j), l.Title, readableURL(l.URL))
+			fmt.Fprintf(&b, "    링크 [%d] %s %s%s\n", commentLinkNo(in, i, j), l.Title, readableURL(l.URL), productNote(l, linked))
 		}
 	}
 	fmt.Fprintf(&b, "\n## 사진\n첨부 사진 %d장을 함께 보냈다.\n", len(in.Images))
 	return append(blocks, anthropic.NewBetaTextBlock(b.String()))
+}
+
+// productNote는 교보문고 상품 링크 뒤에 붙이는 그 상품의 판본 정보다. 찾지 못한 상품이면 빈 문자열이다.
+func productNote(l book.Link, linked map[string]kyobo.Edition) string {
+	pid, _ := kyobo.ProductPID(l.URL)
+	ed, ok := linked[pid]
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf(" → 교보문고 상품: isbn13 %s, %s, %s, %s", ed.ISBN13, ed.Title, strings.Join(ed.Authors, ", "), ed.Publisher)
 }
 
 // readableURL은 퍼센트 인코딩된 주소를 사람이 읽을 수 있게 푼다. 독서 기록 주소처럼 제목 없는 링크는
@@ -218,7 +265,9 @@ func (e *Extractor) runSearch(ctx context.Context, use anthropic.BetaToolUseBloc
 		eds = eds[:maxCandidates]
 	}
 	for _, ed := range eds {
-		seen[ed.ISBN13] = ed
+		if _, ok := seen[ed.ISBN13]; !ok {
+			seen[ed.ISBN13] = ed
+		}
 	}
 	out, _ := json.Marshal(eds)
 	return anthropic.NewBetaToolResultBlock(use.ID, string(out), false)
