@@ -135,11 +135,13 @@ a { color: inherit; }
 .account-button-quiet { background: transparent; color: #eef3fb; border-color: rgba(238, 243, 251, .45); }
 .account-button-quiet:hover { background: rgba(255, 255, 255, .1); }
 .account-card :focus-visible { outline-color: #f4e5b8; }
-.menu-links { display: flex; flex-direction: column; margin-top: 6px; }
+/* 계정 칸은 패널 맨 아래에 있어서, 아래에 관리자 로그인이 없으면 그림자가 잘리지 않게 띄운다. */
+.account-card:last-child { margin-bottom: 8px; }
+.menu-links { display: flex; flex-direction: column; margin: -6px 0 10px; }
 .menu-links a { display: flex; align-items: center; min-height: 48px; padding: 0 6px; border-bottom: 1px solid var(--line); text-decoration: none; font-weight: 600; }
 .menu-links a:last-child { border-bottom: 0; }
 .menu-links a:hover, .menu-links a[aria-current="page"] { color: var(--accent); }
-.menu-admin { margin: 0; padding: 4px 6px 8px; font-size: .8125rem; color: var(--muted); }
+.menu-admin { margin: 0; padding: 10px 6px 4px; font-size: .8125rem; color: var(--muted); }
 .menu-admin a { color: inherit; }
 
 main.wrap { padding-top: 24px; padding-bottom: 48px; min-height: 60vh; }
@@ -314,12 +316,22 @@ main.wrap { padding-top: 24px; padding-bottom: 48px; min-height: 60vh; }
 
 /* 북마크 */
 .my-categories { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: -6px 0 18px; font-size: .875rem; }
-.bookmark-mark { font-weight: 650; color: var(--accent); text-decoration: none; }
+.bookmark-mark { font-weight: 650; color: var(--accent); }
 .bookmark-mark::before { content: "★ "; }
 .my-category { text-decoration: none; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--accent); color: var(--accent); }
 .my-category:hover { background: var(--accent-soft); }
-.bookmark-panel { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-card); padding: 16px 18px; margin: -8px 0 32px; scroll-margin-top: 16px; }
-.bookmark-panel h2 { font-size: 1rem; margin: 0 0 10px; }
+/* '북마크하기'는 옆의 '교보문고에서 보기'와 높이를 맞춘다. 누르면 카테고리를 고르는 레이어를 화면 가운데에 띄운다. */
+.bookmark-open { font: inherit; font-weight: 650; padding: 9px 18px; border-radius: 10px; border: 1px solid var(--accent); background: var(--card); color: var(--accent); cursor: pointer; }
+.bookmark-open:hover, body:has(.bookmark-layer:popover-open) .bookmark-open { background: var(--accent-soft); }
+.book-notice { margin: -8px 0 32px; }
+.bookmark-layer { width: min(420px, calc(100% - 32px)); max-height: calc(100dvh - 48px); margin: auto; padding: 18px 20px 16px; overflow-y: auto; overscroll-behavior: contain;
+  border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--card); color: var(--ink); box-shadow: 0 18px 40px -18px rgba(16, 24, 40, .45);
+  transition: opacity .15s ease-out, overlay .15s allow-discrete, display .15s allow-discrete; }
+.bookmark-layer:not(:popover-open) { opacity: 0; }
+@starting-style { .bookmark-layer:popover-open { opacity: 0; } }
+.bookmark-layer::backdrop { background: var(--scrim); }
+.bookmark-layer h2 { font-size: 1rem; margin: 0 0 12px; }
+@media (prefers-reduced-motion: reduce) { .bookmark-layer { transition: none; } }
 .category-options { border: 0; padding: 0; margin: 0 0 12px; display: flex; flex-wrap: wrap; gap: 6px 16px; }
 .category-options legend { font-size: .875rem; color: var(--muted); padding: 0; margin-bottom: 6px; }
 .category-options label.check { display: inline-flex; align-items: center; gap: 6px; }

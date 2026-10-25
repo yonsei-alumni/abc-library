@@ -8,37 +8,39 @@
       {{if .Book.Publisher}}<p class="book-publisher">{{.Book.Publisher}}</p>{{end}}
       {{template "tag-list" .Tags}}
       {{with .Bookmark}}{{if .Marked}}
-      <p class="my-categories"><a class="bookmark-mark" href="#bookmark">북마크함</a>
+      <p class="my-categories"><span class="bookmark-mark">북마크함</span>
         {{range .In}}<a class="my-category" href="/me/categories/{{.ID}}">{{.Title}}</a>{{else}}<span class="muted">카테고리 없음</span>{{end}}
       </p>
       {{end}}{{end}}
       <p class="book-actions">
         <a class="buy" href="{{buyURL .Book}}" target="_blank" rel="noopener">교보문고에서 보기</a>
+        {{with .Bookmark}}<button type="button" class="bookmark-open" popovertarget="bookmark">{{if .Marked}}북마크 편집{{else}}북마크하기{{end}}</button>{{end}}
         {{if .Admin}}<a class="button button-quiet" href="/admin/books/{{.Book.ID}}">책 편집</a>{{end}}
       </p>
     </div>
   </div>
 
   {{with .Bookmark}}
-  <section class="bookmark-panel" id="bookmark" hx-boost="false">
-    <h2>{{if .Marked}}내 북마크{{else}}북마크{{end}}</h2>
-    {{with $.Notice}}<p class="notice" role="status">{{.}}</p>{{end}}
+  {{with $.Notice}}<p class="notice book-notice" role="status">{{.}}</p>{{end}}
+  <div class="bookmark-layer" id="bookmark" popover role="dialog" aria-labelledby="bookmark-title" hx-boost="false">
+    <h2 id="bookmark-title">{{if .Marked}}북마크 편집{{else}}북마크하기{{end}}</h2>
     <form method="post" action="/me/bookmarks/{{$.Book.ID}}">
       {{if .Categories}}
       <fieldset class="category-options">
         <legend>넣을 카테고리</legend>
         {{range .Categories}}<label class="check"><input type="checkbox" name="category" value="{{.ID}}" {{if .Checked}}checked{{end}}> {{.Title}}</label>{{end}}
       </fieldset>
-      <p class="hint">고른 카테고리에만 넣습니다. 하나도 고르지 않으면 내 북마크에만 있고, 공개한 카테고리에는 나오지 않습니다.</p>
+      <p class="hint">아무것도 고르지 않으면 '카테고리 없음'으로 표시됩니다.</p>
       {{else}}
       <p class="hint">카테고리를 만들면 북마크를 묶어 둘 수 있습니다. <a href="/me">카테고리 만들기</a></p>
       {{end}}
       <div class="admin-row">
         <button class="button">{{if .Marked}}저장{{else}}북마크하기{{end}}</button>
         {{if .Marked}}<button class="button button-danger" formaction="/me/bookmarks/{{$.Book.ID}}/delete">북마크 빼기</button>{{end}}
+        <button type="button" class="button button-quiet" popovertarget="bookmark" popovertargetaction="hide">닫기</button>
       </div>
     </form>
-  </section>
+  </div>
   {{else}}{{if .UserLogin}}
   <p class="bookmark-login"><a href="/login?next={{.Path}}">로그인하면 이 책을 북마크할 수 있습니다.</a></p>
   {{end}}{{end}}

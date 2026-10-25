@@ -137,3 +137,9 @@ document.addEventListener("keydown", (e) => {
   handle.focus();
   saveOrder(item.parentElement);
 });
+
+// 책 상세의 북마크 레이어를 저장하지 않고 닫으면 고른 카테고리를 저장된 상태로 되돌린다.
+// toggle 이벤트는 거품이 일지 않으므로 캡처로 받는다.
+document.addEventListener("toggle", (e) => {
+  if (e.newState === "closed" && e.target.classList?.contains("bookmark-layer")) e.target.querySelector("form")?.reset();
+}, true);

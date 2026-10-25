@@ -213,6 +213,7 @@ func TestUserLoginStoresOnlySubjectHash(t *testing.T) {
 	body = rec.Body.String()
 	assertContains(t, body, `href="/me"`, "내 북마크", "북마크하기", "로그인함", "로그아웃")
 	assertInMenu(t, body, `action="/logout"`)
+	assertMenuOrder(t, body, `href="/me"`, `href="/help"`, `action="/logout"`, "관리자 로그인")
 	// 처음 온 사람을 위한 소식 안내는 로그인한 사용자에게 보이지 않는다.
 	if home := a.get("/", session).Body.String(); strings.Contains(home, "처음이라면") {
 		t.Error("로그인한 사용자에게는 소식 안내를 보이지 않아야 한다")
@@ -237,7 +238,7 @@ func TestUserLoginStoresOnlySubjectHash(t *testing.T) {
 func TestBookPageShowsMyCategories(t *testing.T) {
 	a := newAdminSite(t)
 	uid, me := a.member("hash-me")
-	otherID, _ := a.member("hash-other")
+	otherID, other := a.member("hash-other")
 	a.st.cats = []book.Category{
 		{ID: 101, UserID: uid, Title: "올해의 SF"},
 		{ID: 102, UserID: uid, Title: "나중에 읽기"},
@@ -251,7 +252,9 @@ func TestBookPageShowsMyCategories(t *testing.T) {
 	if mine == nil || !strings.Contains(mine[1], `href="/me/categories/101">올해의 SF</a>`) || strings.Contains(mine[1], "나중에 읽기") {
 		t.Errorf("내 카테고리 표시 = %v", mine)
 	}
-	assertContains(t, body, `value="101" checked`, `value="102" >`, "북마크 빼기", "하나도 고르지 않으면 내 북마크에만 있고")
+	// 카테고리 고르기는 '북마크 편집'을 눌러야 뜨는 레이어 안에 있다.
+	assertContains(t, body, `popovertarget="bookmark">북마크 편집</button>`, `id="bookmark" popover`,
+		`value="101" checked`, `value="102" >`, "북마크 빼기", "아무것도 고르지 않으면 '카테고리 없음'으로 표시됩니다.")
 	if strings.Contains(body, "남의 카테고리") {
 		t.Error("다른 사용자의 카테고리가 보인다")
 	}
@@ -259,10 +262,12 @@ func TestBookPageShowsMyCategories(t *testing.T) {
 	// 북마크했지만 카테고리가 없으면 그렇게 보인다.
 	assertContains(t, a.get("/books/2", me).Body.String(), "북마크함", "카테고리 없음")
 
-	// 북마크하지 않은 책에는 표시가 없고, 로그인하지 않으면 로그인 안내가 보인다.
-	if body := a.get("/books/3", me).Body.String(); strings.Contains(body, "my-categories") {
-		t.Error("북마크하지 않은 책에 내 카테고리 표시가 있다")
+	// 북마크하지 않은 책에는 표시가 없고 '북마크하기'로 레이어를 연다. 로그인하지 않으면 로그인 안내가 보인다.
+	body = a.get("/books/1", other).Body.String()
+	if strings.Contains(body, "my-categories") || strings.Contains(body, "북마크 빼기") {
+		t.Error("북마크하지 않은 책에 내 북마크 표시가 있다")
 	}
+	assertContains(t, body, `popovertarget="bookmark">북마크하기</button>`, `value="103" >`)
 	body = a.get("/books/1").Body.String()
 	assertContains(t, body, "로그인하면 이 책을 북마크할 수 있습니다")
 	if strings.Contains(body, "북마크하기") {
@@ -275,7 +280,7 @@ func TestSaveAndDeleteBookmark(t *testing.T) {
 	uid, me := a.member("hash-me")
 
 	rec := a.post("/me/bookmarks/1", url.Values{"category": {"101", "abc", "-3", "102"}}, me)
-	expectRedirect(t, rec, "/books/1?done=bookmark-saved#bookmark")
+	expectRedirect(t, rec, "/books/1?done=bookmark-saved")
 	expectCalls(t, a.st, fmt.Sprintf("SetBookmark %d 1 [101 102]", uid))
 
 	if rec := a.post("/me/bookmarks/99", nil, me); rec.Code != http.StatusNotFound {
@@ -286,15 +291,15 @@ func TestSaveAndDeleteBookmark(t *testing.T) {
 	}
 	expectCalls(t, a.st)
 
-	expectRedirect(t, a.post("/me/bookmarks/1/delete", nil, me), "/books/1?done=bookmark-deleted#bookmark")
+	expectRedirect(t, a.post("/me/bookmarks/1/delete", nil, me), "/books/1?done=bookmark-deleted")
 	expectCalls(t, a.st, fmt.Sprintf("DeleteBookmark %d 1", uid))
 
 	assertContains(t, a.get("/books/1?done=bookmark-saved", me).Body.String(), "북마크를 저장했습니다.")
 
-	// 카테고리를 하나도 고르지 않고 저장하면 공개 화면에 나오지 않는다고 알린다.
-	expectRedirect(t, a.post("/me/bookmarks/2", url.Values{"category": {"abc"}}, me), "/books/2?done=bookmark-saved-alone#bookmark")
+	// 카테고리를 하나도 고르지 않고 저장하면 '카테고리 없음'으로 표시된다고 알린다.
+	expectRedirect(t, a.post("/me/bookmarks/2", url.Values{"category": {"abc"}}, me), "/books/2?done=bookmark-saved-alone")
 	expectCalls(t, a.st, fmt.Sprintf("SetBookmark %d 2 []", uid))
-	assertContains(t, a.get("/books/2?done=bookmark-saved-alone", me).Body.String(), "고른 카테고리가 없어서 내 북마크에만 있고")
+	assertContains(t, a.get("/books/2?done=bookmark-saved-alone", me).Body.String(), "고른 카테고리가 없어서 '카테고리 없음'으로 표시됩니다.")
 }
 
 func TestBookmarkPagesNeedUser(t *testing.T) {

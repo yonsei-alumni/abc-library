@@ -92,12 +92,12 @@ func (s *Server) saveBookmark(w http.ResponseWriter, r *http.Request) {
 	if s.failed(w, r, err) {
 		return
 	}
-	// 카테고리를 하나도 고르지 않았으면 공개 화면에 나오지 않는다는 것을 바로 알린다.
+	// 카테고리를 하나도 고르지 않았으면 '카테고리 없음'으로 표시된다고 알린다.
 	notice := "bookmark-saved"
 	if len(categories) == 0 {
 		notice = "bookmark-saved-alone"
 	}
-	http.Redirect(w, r, fmt.Sprintf("/books/%d?done=%s#bookmark", id, notice), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("/books/%d?done=%s", id, notice), http.StatusSeeOther)
 }
 
 // reorderCategory는 카테고리 화면에서 끌어서 바꾼 책 순서를 저장한다. 화면의 스크립트(app.js)가 부른다.
@@ -127,7 +127,7 @@ func (s *Server) deleteBookmark(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	http.Redirect(w, r, fmt.Sprintf("/books/%d?done=bookmark-deleted#bookmark", id), http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("/books/%d?done=bookmark-deleted", id), http.StatusSeeOther)
 }
 
 // bookmarkCard는 내 북마크 화면의 책과, 그 책을 넣은 카테고리의 제목이다.

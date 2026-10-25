@@ -210,16 +210,37 @@ func assertContains(t *testing.T, body string, wants ...string) {
 // assertInMenu는 wants가 '메뉴' 패널 안에 있는지 확인한다. 바닥글에 두면 무한 스크롤 화면에서 닿지 않는다.
 func assertInMenu(t *testing.T, body string, wants ...string) {
 	t.Helper()
-	_, menu, ok := strings.Cut(body, `id="site-menu" popover`)
-	menu, _, _ = strings.Cut(menu, "<main")
-	if !ok || !strings.Contains(body, `popovertarget="site-menu"`) {
-		t.Fatal("'메뉴' 패널과 여는 버튼이 없다")
-	}
+	menu := menuPanel(t, body)
 	for _, w := range wants {
 		if !strings.Contains(menu, w) {
 			t.Errorf("'메뉴' 패널에 %q가 없다", w)
 		}
 	}
+}
+
+// assertMenuOrder는 '메뉴' 패널 안에 wants가 이 순서로 있는지 확인한다.
+func assertMenuOrder(t *testing.T, body string, wants ...string) {
+	t.Helper()
+	menu := menuPanel(t, body)
+	at := -1
+	for _, w := range wants {
+		i := strings.Index(menu, w)
+		if i <= at {
+			t.Errorf("'메뉴' 패널에서 %q가 앞의 항목 뒤에 없다(순서 %q)", w, wants)
+			return
+		}
+		at = i
+	}
+}
+
+func menuPanel(t *testing.T, body string) string {
+	t.Helper()
+	_, menu, ok := strings.Cut(body, `id="site-menu" popover`)
+	menu, _, _ = strings.Cut(menu, "<main")
+	if !ok || !strings.Contains(body, `popovertarget="site-menu"`) {
+		t.Fatal("'메뉴' 패널과 여는 버튼이 없다")
+	}
+	return menu
 }
 
 func TestTimelinePagesWithHTMX(t *testing.T) {

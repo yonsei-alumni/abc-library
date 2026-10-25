@@ -37,6 +37,12 @@
   </div>
 </header>
 <div class="menu" id="site-menu" popover>
+  <nav class="menu-links" aria-label="전체 메뉴">
+    {{if .User}}<a href="/me" {{if eq .Nav "me"}}aria-current="page"{{end}}>내 북마크</a>{{end}}
+    {{if .Admin}}<a href="/admin/tags" {{if eq .Nav "admin"}}aria-current="page"{{end}}>관리</a>{{end}}
+    <a href="/help" {{if eq .Nav "help"}}aria-current="page"{{end}}>도움말</a>
+    <a href="/privacy">개인정보 처리방침</a>
+  </nav>
   {{if or .Admin .User}}
   <section class="account-card" aria-label="계정">
     <p class="account-state">로그인함</p>
@@ -49,12 +55,6 @@
     <div class="account-actions"><a class="account-button" href="/login?next={{.Path}}">로그인</a></div>
   </section>
   {{end}}
-  <nav class="menu-links" aria-label="전체 메뉴">
-    {{if .User}}<a href="/me" {{if eq .Nav "me"}}aria-current="page"{{end}}>내 북마크</a>{{end}}
-    {{if .Admin}}<a href="/admin/tags" {{if eq .Nav "admin"}}aria-current="page"{{end}}>관리</a>{{end}}
-    <a href="/help" {{if eq .Nav "help"}}aria-current="page"{{end}}>도움말</a>
-    <a href="/privacy">개인정보 처리방침</a>
-  </nav>
   {{if and .LoginEnabled (not .Admin)}}<p class="menu-admin"><a href="/login?admin=1&amp;next={{.Path}}">관리자 로그인</a></p>{{end}}
 </div>
 <main class="wrap" id="content">
