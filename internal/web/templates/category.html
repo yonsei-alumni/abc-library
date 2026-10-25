@@ -29,8 +29,24 @@
 <section class="admin-section">
   <h2>책 {{len .Books}}권</h2>
   {{if .Books}}
+  {{if gt (len .Books) 1}}<p class="hint">↑↓로 순서를 바꿉니다. 공개 화면에도 이 순서로 보입니다.</p>{{end}}
   <ul class="shelf">
-    {{range .Books}}{{template "category-card" .}}{{end}}
+    {{$id := .Stored.ID}}{{$last := len .Books}}
+    {{range $i, $b := .Books}}
+    <li class="card" id="book-{{$b.ID}}">
+      <a href="/books/{{$b.ID}}">
+        {{template "cover" $b}}
+        <span class="card-title">{{$b.Title}}</span>
+        <span class="card-authors">{{authors $b.Authors}}</span>
+      </a>
+      {{if gt $last 1}}
+      <div class="card-order">
+        {{if $i}}<form class="inline" method="post" action="/me/categories/{{$id}}/move"><input type="hidden" name="book" value="{{$b.ID}}"><input type="hidden" name="dir" value="up"><button class="icon-button" title="앞으로" aria-label="{{$b.Title}} 앞으로">↑</button></form>{{end}}
+        {{if lt (add $i 1) $last}}<form class="inline" method="post" action="/me/categories/{{$id}}/move"><input type="hidden" name="book" value="{{$b.ID}}"><input type="hidden" name="dir" value="down"><button class="icon-button" title="뒤로" aria-label="{{$b.Title}} 뒤로">↓</button></form>{{end}}
+      </div>
+      {{end}}
+    </li>
+    {{end}}
   </ul>
   {{else}}
   <p class="empty">책 화면의 북마크에서 이 카테고리를 고르면 여기에 모입니다.</p>

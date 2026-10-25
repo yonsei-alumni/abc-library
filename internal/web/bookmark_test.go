@@ -92,7 +92,14 @@ func (f *fakeStore) PublicCategories(context.Context) ([]book.Category, error) {
 }
 
 func (f *fakeStore) CategoryBooks(context.Context, int64) ([]book.Book, error) {
-	return []book.Book{story}, nil
+	return []book.Book{story, noIsbn}, nil
+}
+
+func (f *fakeStore) MoveCategoryBook(_ context.Context, userID, categoryID, bookID int64, up bool) error {
+	if bookID > 3 {
+		return store.ErrNotFound
+	}
+	return f.record("MoveCategoryBook %d %d %d %v", userID, categoryID, bookID, up)
 }
 
 func (f *fakeStore) AddCategory(_ context.Context, userID int64, c book.Category) (int64, error) {
@@ -358,6 +365,24 @@ func TestCategoryPages(t *testing.T) {
 	}
 	if rec := a.post("/me/categories/100", form, other); rec.Code != http.StatusNotFound {
 		t.Errorf("남의 카테고리 고치기 code = %d", rec.Code)
+	}
+	expectCalls(t, a.st)
+
+	// 책 순서를 바꾼다. 첫 책에는 ↑가, 마지막 책에는 ↓가 없다.
+	body = html.UnescapeString(a.get("/me/categories/100", me).Body.String())
+	first := regexp.MustCompile(`(?s)<li class="card" id="book-1">.*?</li>`).FindString(body)
+	last := regexp.MustCompile(`(?s)<li class="card" id="book-2">.*?</li>`).FindString(body)
+	if !strings.Contains(first, `value="down"`) || strings.Contains(first, `value="up"`) ||
+		!strings.Contains(last, `value="up"`) || strings.Contains(last, `value="down"`) {
+		t.Errorf("순서 버튼:\n%s\n%s", first, last)
+	}
+	expectRedirect(t, a.post("/me/categories/100/move", url.Values{"book": {"2"}, "dir": {"up"}}, me), "/me/categories/100#book-2")
+	expectRedirect(t, a.post("/me/categories/100/move", url.Values{"book": {"1"}, "dir": {"down"}}, me), "/me/categories/100#book-1")
+	expectCalls(t, a.st, fmt.Sprintf("MoveCategoryBook %d 100 2 true", uid), fmt.Sprintf("MoveCategoryBook %d 100 1 false", uid))
+	for _, form := range []url.Values{{"book": {"99"}}, {"book": {"x"}}, {}} {
+		if rec := a.post("/me/categories/100/move", form, me); rec.Code != http.StatusNotFound {
+			t.Errorf("%v: code = %d", form, rec.Code)
+		}
 	}
 	expectCalls(t, a.st)
 

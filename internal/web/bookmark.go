@@ -22,6 +22,7 @@ func (s *Server) bookmarkRoutes(mux *http.ServeMux) {
 	user("GET /me/categories/{id}", s.myCategory)
 	user("POST /me/categories/{id}", s.saveCategory)
 	user("POST /me/categories/{id}/delete", s.deleteCategory)
+	user("POST /me/categories/{id}/move", s.moveCategoryBook)
 	user("POST /me/bookmarks/{id}", s.saveBookmark)
 	user("POST /me/bookmarks/{id}/delete", s.deleteBookmark)
 	user("POST /me/delete", s.deleteAccount)
@@ -242,6 +243,25 @@ func (s *Server) saveCategory(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 	default:
 		done(w, r, fmt.Sprintf("/me/categories/%d", c.ID), "category-saved")
+	}
+}
+
+// moveCategoryBook은 카테고리 안에서 책을 한 칸 앞이나 뒤로 옮기고, 옮긴 책이 보이게 돌아간다.
+func (s *Server) moveCategoryBook(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(r)
+	bookID, okBook := formID(r, "book")
+	if !ok || !okBook {
+		s.notFound(w, r)
+		return
+	}
+	err := s.store.MoveCategoryBook(r.Context(), userID(r), id, bookID, r.PostFormValue("dir") == "up")
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		s.notFound(w, r)
+	case err != nil:
+		s.fail(w, r, err)
+	default:
+		http.Redirect(w, r, fmt.Sprintf("/me/categories/%d#book-%d", id, bookID), http.StatusSeeOther)
 	}
 }
 

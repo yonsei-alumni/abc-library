@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"slices"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgconn"
@@ -116,7 +117,7 @@ func (s *Store) Category(ctx context.Context, userID, id int64) (book.Category, 
 	return cs[0], nil
 }
 
-// CategoryByCode는 공개 주소의 코드로 카테고리와 그 책을 넣은 순서의 역순으로 돌려준다.
+// CategoryByCode는 공개 주소의 코드로 카테고리와 그 책을 사용자가 정한 순서로 돌려준다.
 // 공개하지 않은 카테고리도 돌려주므로 보여 줄지는 부르는 쪽이 정한다.
 func (s *Store) CategoryByCode(ctx context.Context, code string) (book.Category, []book.Book, error) {
 	cs, err := s.categories(ctx, `c.code = ?`, categoryOrder, code)
@@ -130,14 +131,18 @@ func (s *Store) CategoryByCode(ctx context.Context, code string) (book.Category,
 	return cs[0], books, err
 }
 
-// CategoryBooks는 카테고리에 넣은 책을 넣은 순서의 역순으로 돌려준다.
+// categoryBookOrder는 카테고리 안의 책(별칭 cb, b)을 사용자가 정한 순서로 늘어놓는다.
+// 순서가 같으면 최근에 넣은 책이 먼저 온다.
+const categoryBookOrder = `cb.position, cb.created_at DESC, b.id`
+
+// CategoryBooks는 카테고리에 넣은 책을 사용자가 정한 순서로 돌려준다.
 func (s *Store) CategoryBooks(ctx context.Context, categoryID int64) ([]book.Book, error) {
 	var views []bookView
 	err := s.db.NewRaw(`
 		SELECT `+bookColumns+`
 		FROM bookmark_category_books cb JOIN books b ON b.id = cb.book_id
 		WHERE cb.category_id = ? AND `+visibleBook+`
-		ORDER BY cb.created_at DESC, b.id`, categoryID).Scan(ctx, &views)
+		ORDER BY `+categoryBookOrder, categoryID).Scan(ctx, &views)
 	if err != nil {
 		return nil, err
 	}
@@ -228,10 +233,46 @@ func (s *Store) SetBookmark(ctx context.Context, userID, bookID int64, categoryI
 		if err != nil || len(categoryIDs) == 0 {
 			return err
 		}
+		// 새로 넣은 책은 카테고리의 맨 앞에 둔다.
 		_, err = tx.NewRaw(`
-			INSERT INTO bookmark_category_books (category_id, user_id, book_id)
-			SELECT id, user_id, ? FROM bookmark_categories WHERE user_id = ? AND id IN (?)
+			INSERT INTO bookmark_category_books (category_id, user_id, book_id, position)
+			SELECT c.id, c.user_id, ?, coalesce((SELECT min(position) FROM bookmark_category_books WHERE category_id = c.id), 1) - 1
+			FROM bookmark_categories c WHERE c.user_id = ? AND c.id IN (?)
 			ON CONFLICT DO NOTHING`, bookID, userID, bun.List(categoryIDs)).Exec(ctx)
+		return err
+	})
+}
+
+// MoveCategoryBook은 사용자의 카테고리 안에서 책을 한 칸 앞(up)이나 뒤로 옮긴다. 이미 끝에 있으면 그대로 둔다.
+// 화면에 보이는 책의 순서를 1부터 다시 매긴다. 카테고리나 그 안의 책이 없으면 ErrNotFound다.
+func (s *Store) MoveCategoryBook(ctx context.Context, userID, categoryID, bookID int64, up bool) error {
+	return s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		var ids []int64
+		err := tx.NewRaw(`
+			SELECT b.id
+			FROM bookmark_category_books cb JOIN books b ON b.id = cb.book_id
+			WHERE cb.category_id = ? AND cb.user_id = ? AND `+visibleBook+`
+			ORDER BY `+categoryBookOrder+`
+			FOR UPDATE OF cb`, categoryID, userID).Scan(ctx, &ids)
+		if err != nil {
+			return err
+		}
+		i := slices.Index(ids, bookID)
+		if i < 0 {
+			return ErrNotFound
+		}
+		j := i + 1
+		if up {
+			j = i - 1
+		}
+		if j < 0 || j >= len(ids) {
+			return nil
+		}
+		ids[i], ids[j] = ids[j], ids[i]
+		_, err = tx.NewRaw(`
+			UPDATE bookmark_category_books cb SET position = o.pos
+			FROM unnest(?::bigint[]) WITH ORDINALITY AS o (book_id, pos)
+			WHERE cb.category_id = ? AND cb.book_id = o.book_id`, pgdialect.Array(ids), categoryID).Exec(ctx)
 		return err
 	})
 }

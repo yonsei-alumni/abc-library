@@ -67,6 +67,7 @@ type Store interface {
 	AddCategory(ctx context.Context, userID int64, c book.Category) (int64, error)
 	UpdateCategory(ctx context.Context, userID int64, c book.Category) error
 	DeleteCategory(ctx context.Context, userID, id int64) error
+	MoveCategoryBook(ctx context.Context, userID, categoryID, bookID int64, up bool) error
 	Bookmark(ctx context.Context, userID, bookID int64) (bool, []int64, error)
 	SetBookmark(ctx context.Context, userID, bookID int64, categoryIDs []int64) error
 	DeleteBookmark(ctx context.Context, userID, bookID int64) error
@@ -128,6 +129,7 @@ func New(st Store, cfg Config, log *slog.Logger) (*Server, error) {
 		"kindName": kindName,
 		"excerpt":  excerpt,
 		"markdown": markdown,
+		"add":      func(a, b int) int { return a + b },
 	}
 	for _, page := range []string{"timeline", "books", "book", "tags", "authors", "error", "login",
 		"admin-tags", "admin-book", "admin-mention", "admin-admins", "me", "category", "shared", "shared-list"} {

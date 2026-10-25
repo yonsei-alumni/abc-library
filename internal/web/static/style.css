@@ -211,6 +211,8 @@ main.wrap { padding-top: 28px; padding-bottom: 48px; min-height: 60vh; }
 .shared .markdown { margin-bottom: 28px; }
 .shared-books h2 { font-size: 1.1rem; margin: 0 0 14px; }
 .shared-list .count { margin-left: auto; }
+.card-order { display: flex; gap: 6px; margin-top: 6px; }
+.card { scroll-margin-top: 16px; }
 
 @media (max-width: 600px) {
   .entry { grid-template-columns: 1fr; gap: 6px; }

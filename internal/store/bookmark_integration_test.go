@@ -203,6 +203,84 @@ func TestCategoriesAndBookmarks(t *testing.T) {
 	}
 }
 
+func titles(bs []book.Book) []string {
+	var ts []string
+	for _, b := range bs {
+		ts = append(ts, b.Title)
+	}
+	return ts
+}
+
+func TestMoveCategoryBook(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	books := saveBooks(t, s, "가", "나", "다")
+	me, _ := s.UserID(ctx, "hash-me")
+	other, _ := s.UserID(ctx, "hash-other")
+	cat, _ := s.AddCategory(ctx, me, book.Category{Title: "모음"})
+	for _, id := range books {
+		if err := s.SetBookmark(ctx, me, id, []int64{cat}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	order := func() []string {
+		t.Helper()
+		bs, err := s.CategoryBooks(ctx, cat)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return titles(bs)
+	}
+	// 새로 넣은 책이 맨 앞에 온다.
+	if got := order(); !slices.Equal(got, []string{"다", "나", "가"}) {
+		t.Fatalf("처음 순서 = %v", got)
+	}
+	// [다 나 가]에서 가를 앞으로, 다를 뒤로 옮긴다.
+	if err := s.MoveCategoryBook(ctx, me, cat, books[0], true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MoveCategoryBook(ctx, me, cat, books[2], false); err != nil {
+		t.Fatal(err)
+	}
+	if got := order(); !slices.Equal(got, []string{"가", "다", "나"}) {
+		t.Errorf("옮긴 순서 = %v", got)
+	}
+	// 맨 앞을 더 앞으로, 맨 뒤를 더 뒤로 옮기면 그대로 둔다.
+	if err := s.MoveCategoryBook(ctx, me, cat, books[0], true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MoveCategoryBook(ctx, me, cat, books[1], false); err != nil {
+		t.Fatal(err)
+	}
+	if got := order(); !slices.Equal(got, []string{"가", "다", "나"}) {
+		t.Errorf("끝에서 옮긴 순서 = %v", got)
+	}
+	// 카테고리를 다시 저장해도 이미 넣은 책의 순서는 그대로다.
+	if err := s.SetBookmark(ctx, me, books[2], []int64{cat}); err != nil {
+		t.Fatal(err)
+	}
+	if got := order(); !slices.Equal(got, []string{"가", "다", "나"}) {
+		t.Errorf("다시 저장한 뒤 순서 = %v", got)
+	}
+	// 다른 사용자의 카테고리나 넣지 않은 책은 옮기지 못한다.
+	if err := s.MoveCategoryBook(ctx, other, cat, books[0], true); !errors.Is(err, ErrNotFound) {
+		t.Errorf("남의 카테고리 = %v", err)
+	}
+	if err := s.MoveCategoryBook(ctx, me, cat, 999999, true); !errors.Is(err, ErrNotFound) {
+		t.Errorf("없는 책 = %v", err)
+	}
+	// 관리자가 언급을 모두 지운 책은 건너뛰고 보이는 책끼리 옮긴다.
+	if err := s.DeleteBook(ctx, books[2]); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MoveCategoryBook(ctx, me, cat, books[1], true); err != nil {
+		t.Fatal(err)
+	}
+	if got := order(); !slices.Equal(got, []string{"나", "가"}) {
+		t.Errorf("숨긴 책을 건너뛴 순서 = %v", got)
+	}
+}
+
 func TestCategoryLimit(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
