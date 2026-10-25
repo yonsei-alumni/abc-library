@@ -41,7 +41,7 @@
   - sub는 Google이 계정마다 바꾸지 않고 다시 쓰지 않는 번호라서 메일 주소보다 식별자로 알맞다. 메일 주소는 바뀌거나 다른 사람에게 다시 배정될 수 있다.
   - 메일 주소의 HMAC 값은 함께 저장하지 않는다. 쓸 데가 없고, 메일 주소는 짐작하기 쉬워서 키가 새면 맞춰 볼 수 있다.
 - 책 상세에서 북마크하고, 그 책을 넣을 내 카테고리를 여러 개 고른다. 북마크한 책은 제목 아래에 '북마크함'과 넣은 카테고리가 바로 보인다.
-- 내 북마크(`/me`)에서 카테고리를 만들고 북마크를 모아 본다. 카테고리는 사용자마다 100개까지 만든다. 계정을 지우면 북마크와 카테고리가 모두 지워진다.
+- 내 북마크(`/me`)에서 카테고리를 만들고 북마크를 모아 본다. 카테고리는 사용자마다 100개까지 만든다. 카테고리는 ↑↓로 순서를 바꾸고, 책 상세의 카테고리 고르기와 '북마크함' 표시도 그 순서를 따른다. 새 카테고리는 맨 뒤에 온다. 계정을 지우면 북마크와 카테고리가 모두 지워진다.
 - 카테고리(`/me/categories/{id}`)에는 제목, 본문(여러 줄, Markdown), 공개용 제목, 공개 여부가 있다. 카테고리 안의 책은 ↑↓로 순서를 바꾸고, 공개 화면에도 그 순서로 보인다. 새로 넣은 책은 맨 앞에 온다. 본문의 원시 HTML과 `javascript:` 같은 위험한 주소는 싣지 않는다(goldmark 기본값).
 - 공개한 카테고리는 짧은 주소 `/shared/{code}`에서 누구나 공개용 제목(비었으면 제목), 본문, 책 목록을 한 화면에 본다. `code`는 임의로 뽑은 영어 소문자 3자(17,576 가지)다. 겹치면 다시 뽑고, 열 번 겹치면 한 글자 더 긴 코드를 뽑는다. 대문자로 적은 주소도 찾는다. 공개하지 않은 카테고리는 만든 사람에게만 보인다.
 - 위쪽 메뉴의 '공개 북마크'(`/shared`)는 모든 사용자의 공개한 카테고리를 최근에 고친 순서로 보여 준다.
@@ -116,7 +116,7 @@
 | `admins` | `email`(유일), `added_by` | 관리자의 Google 계정 메일 주소 |
 | `users` | `subject_hash`(유일) | 로그인한 사용자. Google 계정 고유 번호(sub)의 HMAC-SHA256 값만 둔다 |
 | `bookmarks` | `user_id`, `book_id` | 사용자가 북마크한 책 |
-| `bookmark_categories` | `user_id`, `title`, `body`(Markdown), `public_title`, `public`, `code`(유일) | 북마크를 묶는 카테고리. `code`는 공개 주소 `/shared/{code}`다 |
+| `bookmark_categories` | `user_id`, `title`, `body`(Markdown), `public_title`, `public`, `code`(유일), `position` | 북마크를 묶는 카테고리. `code`는 공개 주소 `/shared/{code}`다 |
 | `bookmark_category_books` | `category_id`, `user_id`, `book_id`, `position` | 카테고리에 넣은 북마크와 그 순서. 같은 사용자의 카테고리와 북마크만 잇는다 |
 | `batch_runs` | `started_at`, `finished_at`, `last_post_no`, `latest_post_no`, 처리 건수, `error` | 배치 실행 기록 |
 | `pending_posts` | `band_post_no`, `reason`(`failed`/`missing`), `attempts`, `last_error` | 다음 실행에서 다시 시도할 글 |

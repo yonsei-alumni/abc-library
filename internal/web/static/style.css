@@ -214,6 +214,8 @@ main.wrap { padding-top: 28px; padding-bottom: 48px; min-height: 60vh; }
 .footer-links { margin: 10px 0 0; }
 .card-order { display: flex; gap: 6px; margin-top: 6px; }
 .card { scroll-margin-top: 16px; }
+.list-order { display: inline-flex; gap: 6px; margin-left: auto; }
+.category-list li { scroll-margin-top: 16px; }
 .policy { max-width: 760px; line-height: 1.7; }
 .policy h2 { font-size: 1.1rem; margin: 32px 0 8px; }
 .policy ul { padding-left: 1.2em; }

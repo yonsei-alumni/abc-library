@@ -79,8 +79,8 @@ const categoryColumns = `c.id, c.user_id, c.title, c.body, c.public_title, c.pub
 	(SELECT count(*) FROM bookmark_category_books cb JOIN books b ON b.id = cb.book_id
 	 WHERE cb.category_id = c.id AND ` + visibleBook + `) AS books`
 
-// categoryOrder는 카테고리를 만든 순서로 늘어놓는다.
-const categoryOrder = `c.created_at, c.id`
+// categoryOrder는 카테고리를 사용자가 정한 순서로 늘어놓는다. 순서가 같으면 만든 순서를 따른다.
+const categoryOrder = `c.position, c.created_at, c.id`
 
 func (s *Store) categories(ctx context.Context, where, order string, args ...any) ([]book.Category, error) {
 	var views []categoryView
@@ -95,7 +95,7 @@ func (s *Store) categories(ctx context.Context, where, order string, args ...any
 	return cs, nil
 }
 
-// Categories는 사용자의 카테고리를 만든 순서로 돌려준다.
+// Categories는 사용자의 카테고리를 사용자가 정한 순서로 돌려준다.
 func (s *Store) Categories(ctx context.Context, userID int64) ([]book.Category, error) {
 	return s.categories(ctx, `c.user_id = ?`, categoryOrder, userID)
 }
@@ -153,7 +153,7 @@ func (s *Store) CategoryBooks(ctx context.Context, categoryID int64) ([]book.Boo
 	return books, nil
 }
 
-// AddCategory는 카테고리를 만들고 번호를 돌려준다. 공개 주소의 코드는 새로 뽑는다.
+// AddCategory는 카테고리를 맨 뒤에 만들고 번호를 돌려준다. 공개 주소의 코드는 새로 뽑는다.
 // 사용자가 이미 book.MaxCategories개를 만들었으면 ErrTooMany다.
 func (s *Store) AddCategory(ctx context.Context, userID int64, c book.Category) (int64, error) {
 	n, err := s.db.NewSelect().Model((*categoryRow)(nil)).Where("user_id = ?", userID).Count(ctx)
@@ -167,7 +167,9 @@ func (s *Store) AddCategory(ctx context.Context, userID int64, c book.Category) 
 	for i := range 30 {
 		code := book.NewCode(book.CodeLen + i/10)
 		row := &categoryRow{UserID: userID, Title: c.Title, Body: c.Body, PublicTitle: c.PublicTitle, Public: c.Public, Code: code}
-		_, err = s.db.NewInsert().Model(row).Returning("id").Exec(ctx)
+		_, err = s.db.NewInsert().Model(row).
+			Value("position", "(SELECT coalesce(max(position), 0) + 1 FROM bookmark_categories WHERE user_id = ?)", userID).
+			Returning("id").Exec(ctx)
 		if !isUniqueViolation(err) {
 			return row.ID, err
 		}
@@ -189,6 +191,46 @@ func (s *Store) UpdateCategory(ctx context.Context, userID int64, c book.Categor
 		return err
 	}
 	return expectRow(res, ErrNotFound)
+}
+
+// MoveCategory는 사용자의 카테고리를 한 칸 앞(up)이나 뒤로 옮긴다. 이미 끝에 있으면 그대로 둔다.
+// 사용자의 카테고리 순서를 1부터 다시 매긴다. 다른 사용자의 카테고리는 ErrNotFound다.
+func (s *Store) MoveCategory(ctx context.Context, userID, id int64, up bool) error {
+	return s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
+		var ids []int64
+		err := tx.NewRaw(`SELECT c.id FROM bookmark_categories c WHERE c.user_id = ? ORDER BY `+categoryOrder+` FOR UPDATE`, userID).Scan(ctx, &ids)
+		if err != nil {
+			return err
+		}
+		if !swapNeighbor(ids, id, up) {
+			if slices.Contains(ids, id) {
+				return nil
+			}
+			return ErrNotFound
+		}
+		_, err = tx.NewRaw(`
+			UPDATE bookmark_categories c SET position = o.pos
+			FROM unnest(?::bigint[]) WITH ORDINALITY AS o (id, pos)
+			WHERE c.id = o.id AND c.user_id = ?`, pgdialect.Array(ids), userID).Exec(ctx)
+		return err
+	})
+}
+
+// swapNeighbor는 ids에서 id를 한 칸 앞(up)이나 뒤의 것과 맞바꾼다. id가 없거나 이미 끝에 있으면 거짓이다.
+func swapNeighbor(ids []int64, id int64, up bool) bool {
+	i := slices.Index(ids, id)
+	if i < 0 {
+		return false
+	}
+	j := i + 1
+	if up {
+		j = i - 1
+	}
+	if j < 0 || j >= len(ids) {
+		return false
+	}
+	ids[i], ids[j] = ids[j], ids[i]
+	return true
 }
 
 // DeleteCategory는 사용자의 카테고리를 지운다. 그 안의 북마크는 남는다.
@@ -257,18 +299,12 @@ func (s *Store) MoveCategoryBook(ctx context.Context, userID, categoryID, bookID
 		if err != nil {
 			return err
 		}
-		i := slices.Index(ids, bookID)
-		if i < 0 {
+		if !swapNeighbor(ids, bookID, up) {
+			if slices.Contains(ids, bookID) {
+				return nil
+			}
 			return ErrNotFound
 		}
-		j := i + 1
-		if up {
-			j = i - 1
-		}
-		if j < 0 || j >= len(ids) {
-			return nil
-		}
-		ids[i], ids[j] = ids[j], ids[i]
 		_, err = tx.NewRaw(`
 			UPDATE bookmark_category_books cb SET position = o.pos
 			FROM unnest(?::bigint[]) WITH ORDINALITY AS o (book_id, pos)

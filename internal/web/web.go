@@ -68,6 +68,7 @@ type Store interface {
 	UpdateCategory(ctx context.Context, userID int64, c book.Category) error
 	DeleteCategory(ctx context.Context, userID, id int64) error
 	MoveCategoryBook(ctx context.Context, userID, categoryID, bookID int64, up bool) error
+	MoveCategory(ctx context.Context, userID, id int64, up bool) error
 	Bookmark(ctx context.Context, userID, bookID int64) (bool, []int64, error)
 	SetBookmark(ctx context.Context, userID, bookID int64, categoryIDs []int64) error
 	DeleteBookmark(ctx context.Context, userID, bookID int64) error

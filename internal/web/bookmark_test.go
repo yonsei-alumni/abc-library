@@ -95,6 +95,13 @@ func (f *fakeStore) CategoryBooks(context.Context, int64) ([]book.Book, error) {
 	return []book.Book{story, noIsbn}, nil
 }
 
+func (f *fakeStore) MoveCategory(_ context.Context, userID, id int64, up bool) error {
+	if id > 200 {
+		return store.ErrNotFound
+	}
+	return f.record("MoveCategory %d %d %v", userID, id, up)
+}
+
 func (f *fakeStore) MoveCategoryBook(_ context.Context, userID, categoryID, bookID int64, up bool) error {
 	if bookID > 3 {
 		return store.ErrNotFound
@@ -406,6 +413,24 @@ func TestMyBookmarksPage(t *testing.T) {
 	if strings.Contains(body, "/shared/prv") {
 		t.Error("공개하지 않은 카테고리의 주소가 목록에 보인다")
 	}
+
+	// 카테고리 순서를 바꾼다. 첫 카테고리에는 ↑가, 마지막 카테고리에는 ↓가 없다.
+	body = html.UnescapeString(body)
+	first := regexp.MustCompile(`(?s)<li id="category-101">.*?</li>`).FindString(body)
+	last := regexp.MustCompile(`(?s)<li id="category-102">.*?</li>`).FindString(body)
+	if !strings.Contains(first, `value="down"`) || strings.Contains(first, `value="up"`) ||
+		!strings.Contains(last, `value="up"`) || strings.Contains(last, `value="down"`) {
+		t.Errorf("순서 버튼:\n%s\n%s", first, last)
+	}
+	expectRedirect(t, a.post("/me/categories/move", url.Values{"category": {"102"}, "dir": {"up"}}, me), "/me#category-102")
+	expectRedirect(t, a.post("/me/categories/move", url.Values{"category": {"101"}, "dir": {"down"}}, me), "/me#category-101")
+	expectCalls(t, a.st, fmt.Sprintf("MoveCategory %d 102 true", uid), fmt.Sprintf("MoveCategory %d 101 false", uid))
+	for _, form := range []url.Values{{"category": {"999"}}, {"category": {"x"}}, {}} {
+		if rec := a.post("/me/categories/move", form, me); rec.Code != http.StatusNotFound {
+			t.Errorf("%v: code = %d", form, rec.Code)
+		}
+	}
+	expectCalls(t, a.st)
 }
 
 func TestSharedCategory(t *testing.T) {

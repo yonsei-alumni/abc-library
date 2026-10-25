@@ -7,11 +7,18 @@
   <h2>카테고리 {{len .Categories}}개</h2>
   {{if .Categories}}
   <ul class="admin-list category-list">
-    {{range .Categories}}
-    <li>
-      <a class="category-title" href="/me/categories/{{.ID}}">{{.Title}}</a>
-      <span class="muted">책 {{.Books}}권</span>
-      {{if .Public}}<span class="badge">공개</span> <a class="share-link" href="/shared/{{.Code}}">{{$.SiteURL}}/shared/{{.Code}}</a>{{else}}<span class="badge badge-private">비공개</span>{{end}}
+    {{$last := len .Categories}}
+    {{range $i, $c := .Categories}}
+    <li id="category-{{$c.ID}}">
+      <a class="category-title" href="/me/categories/{{$c.ID}}">{{$c.Title}}</a>
+      <span class="muted">책 {{$c.Books}}권</span>
+      {{if $c.Public}}<span class="badge">공개</span> <a class="share-link" href="/shared/{{$c.Code}}">{{$.SiteURL}}/shared/{{$c.Code}}</a>{{else}}<span class="badge badge-private">비공개</span>{{end}}
+      {{if gt $last 1}}
+      <span class="list-order">
+        {{if $i}}<form class="inline" method="post" action="/me/categories/move"><input type="hidden" name="category" value="{{$c.ID}}"><input type="hidden" name="dir" value="up"><button class="icon-button" title="앞으로" aria-label="{{$c.Title}} 앞으로">↑</button></form>{{end}}
+        {{if lt (add $i 1) $last}}<form class="inline" method="post" action="/me/categories/move"><input type="hidden" name="category" value="{{$c.ID}}"><input type="hidden" name="dir" value="down"><button class="icon-button" title="뒤로" aria-label="{{$c.Title}} 뒤로">↓</button></form>{{end}}
+      </span>
+      {{end}}
     </li>
     {{end}}
   </ul>
@@ -20,7 +27,7 @@
     <input name="title" required maxlength="100" placeholder="새 카테고리 제목" aria-label="새 카테고리 제목">
     <button class="button">만들기</button>
   </form>
-  <p class="hint">북마크 하나를 여러 카테고리에 넣을 수 있습니다. 카테고리는 {{.MaxCategories}}개까지 만들 수 있고, 하나씩 공개할 수 있습니다.</p>
+  <p class="hint">북마크 하나를 여러 카테고리에 넣을 수 있습니다. 카테고리는 {{.MaxCategories}}개까지 만들 수 있고, 하나씩 공개할 수 있습니다. ↑↓로 순서를 바꾸면 책 화면의 카테고리도 그 순서로 보입니다.</p>
 </section>
 
 <section class="admin-section">

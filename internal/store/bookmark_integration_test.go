@@ -281,6 +281,61 @@ func TestMoveCategoryBook(t *testing.T) {
 	}
 }
 
+func TestMoveCategory(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	me, _ := s.UserID(ctx, "hash-me")
+	other, _ := s.UserID(ctx, "hash-other")
+	var ids []int64
+	for _, title := range []string{"가", "나", "다"} {
+		id, err := s.AddCategory(ctx, me, book.Category{Title: title})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+	}
+	theirs, _ := s.AddCategory(ctx, other, book.Category{Title: "남"})
+	order := func() []string {
+		t.Helper()
+		cs, err := s.Categories(ctx, me)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var ts []string
+		for _, c := range cs {
+			ts = append(ts, c.Title)
+		}
+		return ts
+	}
+	// 새 카테고리는 맨 뒤에 온다.
+	if got := order(); !slices.Equal(got, []string{"가", "나", "다"}) {
+		t.Fatalf("처음 순서 = %v", got)
+	}
+	if err := s.MoveCategory(ctx, me, ids[2], true); err != nil {
+		t.Fatal(err)
+	}
+	if got := order(); !slices.Equal(got, []string{"가", "다", "나"}) {
+		t.Errorf("다를 앞으로 = %v", got)
+	}
+	// 맨 앞을 더 앞으로 옮기면 그대로 둔다.
+	if err := s.MoveCategory(ctx, me, ids[0], true); err != nil {
+		t.Fatal(err)
+	}
+	if got := order(); !slices.Equal(got, []string{"가", "다", "나"}) {
+		t.Errorf("끝에서 옮긴 순서 = %v", got)
+	}
+	// 옮긴 뒤에 만든 카테고리도 맨 뒤에 온다.
+	if _, err := s.AddCategory(ctx, me, book.Category{Title: "라"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := order(); !slices.Equal(got, []string{"가", "다", "나", "라"}) {
+		t.Errorf("더한 뒤 순서 = %v", got)
+	}
+	if err := s.MoveCategory(ctx, me, theirs, true); !errors.Is(err, ErrNotFound) {
+		t.Errorf("남의 카테고리 옮기기 = %v", err)
+	}
+}
+
 func TestCategoryLimit(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()

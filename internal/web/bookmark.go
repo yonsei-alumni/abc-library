@@ -19,6 +19,7 @@ func (s *Server) bookmarkRoutes(mux *http.ServeMux) {
 	user := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, s.requireUser(h)) }
 	user("GET /me", func(w http.ResponseWriter, r *http.Request) { s.renderMe(w, r, http.StatusOK, "") })
 	user("POST /me/categories", s.addCategory)
+	user("POST /me/categories/move", s.moveCategory)
 	user("GET /me/categories/{id}", s.myCategory)
 	user("POST /me/categories/{id}", s.saveCategory)
 	user("POST /me/categories/{id}/delete", s.deleteCategory)
@@ -243,6 +244,24 @@ func (s *Server) saveCategory(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 	default:
 		done(w, r, fmt.Sprintf("/me/categories/%d", c.ID), "category-saved")
+	}
+}
+
+// moveCategory는 내 카테고리를 한 칸 앞이나 뒤로 옮기고, 옮긴 카테고리가 보이게 돌아간다.
+func (s *Server) moveCategory(w http.ResponseWriter, r *http.Request) {
+	id, ok := formID(r, "category")
+	if !ok {
+		s.notFound(w, r)
+		return
+	}
+	err := s.store.MoveCategory(r.Context(), userID(r), id, r.PostFormValue("dir") == "up")
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		s.notFound(w, r)
+	case err != nil:
+		s.fail(w, r, err)
+	default:
+		http.Redirect(w, r, fmt.Sprintf("/me#category-%d", id), http.StatusSeeOther)
 	}
 }
 
