@@ -209,10 +209,25 @@ func (c *Crawler) open(url string) error {
 	if _, err := c.page.Goto(url, playwright.PageGotoOptions{WaitUntil: playwright.WaitUntilStateDomcontentloaded}); err != nil {
 		return err
 	}
-	if strings.Contains(c.page.URL(), "auth.band.us") || strings.Contains(c.page.URL(), "/login") {
+	if IsLoginURL(c.page.URL()) {
 		return ErrSessionExpired
 	}
 	return nil
+}
+
+// IsLoginURL은 밴드 로그인 화면의 주소인지 알려 준다.
+func IsLoginURL(raw string) bool {
+	return strings.Contains(raw, "auth.band.us") || strings.Contains(raw, "/login")
+}
+
+// waitFor는 요소가 화면에 붙을 때까지 기다린다. 밴드는 세션이 끝났으면 페이지를 띄운 뒤 스크립트로 로그인 화면으로 옮겨 가므로,
+// 기다리다 실패하면 로그인 화면인지 확인해서 ErrSessionExpired를 돌려준다.
+func (c *Crawler) waitFor(loc playwright.Locator, timeout float64) error {
+	err := loc.WaitFor(playwright.LocatorWaitForOptions{State: playwright.WaitForSelectorStateAttached, Timeout: playwright.Float(timeout)})
+	if err != nil && IsLoginURL(c.page.URL()) {
+		return ErrSessionExpired
+	}
+	return err
 }
 
 // LatestPostNo는 게시글 목록에서 가장 최근 글의 번호를 읽는다.
@@ -221,9 +236,7 @@ func (c *Crawler) LatestPostNo() (int, error) {
 		return 0, err
 	}
 	sel := fmt.Sprintf(`a[href*="/band/%s/post/"]`, c.BandNo)
-	if err := c.page.Locator(sel).First().WaitFor(playwright.LocatorWaitForOptions{
-		State: playwright.WaitForSelectorStateAttached, Timeout: playwright.Float(20000),
-	}); err != nil {
+	if err := c.waitFor(c.page.Locator(sel).First(), 20000); err != nil {
 		return 0, fmt.Errorf("게시글 목록을 읽지 못했습니다: %w", err)
 	}
 	v, err := c.page.Evaluate(`bandNo => Math.max(0, ...[...document.querySelectorAll('a[href*="/band/' + bandNo + '/post/"]')]
@@ -263,9 +276,8 @@ func (c *Crawler) RecentlyCommented(done func(Activity) bool, limit int) ([]Acti
 	if err := c.open(fmt.Sprintf("https://band.us/band/%s/post", c.BandNo)); err != nil {
 		return nil, err
 	}
-	wait := playwright.LocatorWaitForOptions{State: playwright.WaitForSelectorStateAttached, Timeout: playwright.Float(20000)}
 	sortButton := c.page.Locator("._btnSort").First()
-	if err := sortButton.WaitFor(wait); err != nil {
+	if err := c.waitFor(sortButton, 20000); err != nil {
 		return nil, fmt.Errorf("게시글 목록의 정렬 버튼을 찾지 못했습니다: %w", err)
 	}
 	click := playwright.LocatorClickOptions{Timeout: playwright.Float(5000)}
@@ -275,7 +287,7 @@ func (c *Crawler) RecentlyCommented(done func(Activity) bool, limit int) ([]Acti
 	if err := c.page.Locator("button._optionMenuLink", playwright.PageLocatorOptions{HasText: "최신 댓글순"}).First().Click(click); err != nil {
 		return nil, fmt.Errorf("'최신 댓글순' 정렬을 고르지 못했습니다: %w", err)
 	}
-	if err := c.page.Locator("._btnSort", playwright.PageLocatorOptions{HasText: "최신 댓글순"}).First().WaitFor(wait); err != nil {
+	if err := c.waitFor(c.page.Locator("._btnSort", playwright.PageLocatorOptions{HasText: "최신 댓글순"}).First(), 20000); err != nil {
 		return nil, fmt.Errorf("정렬이 '최신 댓글순'으로 바뀌지 않았습니다: %w", err)
 	}
 	// 정렬 버튼은 바로 바뀌지만 목록은 새로 불러온 뒤에 다시 그린다.
@@ -393,10 +405,11 @@ func (c *Crawler) Post(no int) (Post, error) {
 	if err := c.open(PostURL(c.BandNo, no)); err != nil {
 		return Post{}, err
 	}
-	err := c.page.Locator(".postWrap .postMain .postBody").WaitFor(playwright.LocatorWaitForOptions{
-		State: playwright.WaitForSelectorStateAttached, Timeout: playwright.Float(15000),
-	})
-	if err != nil {
+	// 로그인 화면으로 옮겨 간 글을 삭제된 글로 여기지 않는다.
+	if err := c.waitFor(c.page.Locator(".postWrap .postMain .postBody"), 15000); err != nil {
+		if errors.Is(err, ErrSessionExpired) {
+			return Post{}, err
+		}
 		return Post{}, ErrNotFound
 	}
 	c.loadAllComments()

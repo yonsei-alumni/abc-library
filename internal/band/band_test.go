@@ -152,6 +152,22 @@ func raw(v any) string {
 	return s
 }
 
+func TestIsLoginURL(t *testing.T) {
+	for raw, want := range map[string]bool{
+		"https://auth.band.us/login?next_url=https%3A%2F%2Fwww.band.us%2Fband%2F102765569%2Fpost": true,
+		"https://auth.band.us/email_login":                  true,
+		"https://band.us/login":                             true,
+		"https://band.us/band/102765569/post":               false,
+		"https://band.us/band/102765569/post/188":           false,
+		"https://www.band.us/band/102765569/post?sort=rcmt": false,
+		"": false,
+	} {
+		if got := IsLoginURL(raw); got != want {
+			t.Errorf("IsLoginURL(%q) = %v, want %v", raw, got, want)
+		}
+	}
+}
+
 func TestOnPostPage(t *testing.T) {
 	tests := []struct {
 		url  string
