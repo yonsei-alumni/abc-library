@@ -87,14 +87,20 @@ func (s *Server) saveBookmark(w http.ResponseWriter, r *http.Request) {
 	if !s.parseForm(w, r) {
 		return
 	}
-	err := s.store.SetBookmark(r.Context(), userID(r), id, formIDs(r, "category"))
+	categories := formIDs(r, "category")
+	err := s.store.SetBookmark(r.Context(), userID(r), id, categories)
+	// 카테고리를 하나도 고르지 않았으면 공개 화면에 나오지 않는다는 것을 바로 알린다.
+	done := "bookmark-saved"
+	if len(categories) == 0 {
+		done = "bookmark-saved-alone"
+	}
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		s.notFound(w, r)
 	case err != nil:
 		s.fail(w, r, err)
 	default:
-		http.Redirect(w, r, fmt.Sprintf("/books/%d?done=bookmark-saved#bookmark", id), http.StatusSeeOther)
+		http.Redirect(w, r, fmt.Sprintf("/books/%d?done=%s#bookmark", id, done), http.StatusSeeOther)
 	}
 }
 
@@ -146,17 +152,22 @@ func (s *Server) renderMe(w http.ResponseWriter, r *http.Request, code int, errM
 		titles[c.ID] = c.Title
 	}
 	cards := make([]bookmarkCard, len(marks))
+	// alone은 어느 카테고리에도 넣지 않은 북마크 수다. 이 책들은 공개 화면에 나오지 않는다.
+	alone := 0
 	for i, m := range marks {
 		cards[i] = bookmarkCard{Book: m.Book}
 		for _, id := range m.Categories {
 			cards[i].Categories = append(cards[i].Categories, titles[id])
+		}
+		if len(m.Categories) == 0 {
+			alone++
 		}
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(code)
 	s.render(w, r, "me", "layout", map[string]any{
 		"Title": "내 북마크", "Nav": "me", "Categories": cs, "Bookmarks": cards, "SiteURL": s.siteURL,
-		"MaxCategories": book.MaxCategories, "Error": errMsg,
+		"MaxCategories": book.MaxCategories, "Error": errMsg, "Alone": alone,
 	})
 }
 

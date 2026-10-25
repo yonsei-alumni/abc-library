@@ -136,6 +136,7 @@ main.wrap { padding-top: 24px; padding-bottom: 48px; min-height: 60vh; }
 .card a:hover .card-title { color: var(--accent); }
 .card-title { font-weight: 650; line-height: 1.35; letter-spacing: -.01em; }
 .card-authors, .card-meta { color: var(--muted); font-size: .8125rem; line-height: 1.4; }
+.card-alone { color: var(--new); font-weight: 600; }
 
 .more-row { list-style: none; grid-column: 1 / -1; text-align: center; padding: 20px 0; border: 0; display: block; }
 .more { font: inherit; font-size: .9375rem; padding: 9px 26px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; }

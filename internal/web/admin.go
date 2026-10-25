@@ -86,11 +86,12 @@ var notices = map[string]string{
 	"admin-added":     "관리자를 더했습니다.",
 	"admin-deleted":   "관리자를 지웠습니다.",
 
-	"bookmark-saved":   "북마크를 저장했습니다.",
-	"bookmark-deleted": "북마크를 뺐습니다.",
-	"category-added":   "카테고리를 만들었습니다. 본문과 공개 여부를 정해 주세요.",
-	"category-saved":   "카테고리를 저장했습니다.",
-	"category-deleted": "카테고리를 지웠습니다. 넣어 둔 북마크는 남아 있습니다.",
+	"bookmark-saved":       "북마크를 저장했습니다.",
+	"bookmark-saved-alone": "북마크를 저장했습니다. 고른 카테고리가 없어서 내 북마크에만 있고, 공개한 카테고리에는 나오지 않습니다.",
+	"bookmark-deleted":     "북마크를 뺐습니다.",
+	"category-added":       "카테고리를 만들었습니다. 본문과 공개 여부를 정해 주세요.",
+	"category-saved":       "카테고리를 저장했습니다.",
+	"category-deleted":     "카테고리를 지웠습니다. 넣어 둔 북마크는 남아 있습니다.",
 }
 
 func (s *Server) renderAdmin(w http.ResponseWriter, r *http.Request, code int, page string, data map[string]any) {

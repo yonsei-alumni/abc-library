@@ -243,7 +243,7 @@ func TestBookPageShowsMyCategories(t *testing.T) {
 	if mine == nil || !strings.Contains(mine[1], `href="/me/categories/101">올해의 SF</a>`) || strings.Contains(mine[1], "나중에 읽기") {
 		t.Errorf("내 카테고리 표시 = %v", mine)
 	}
-	assertContains(t, body, `value="101" checked`, `value="102" >`, "북마크 빼기")
+	assertContains(t, body, `value="101" checked`, `value="102" >`, "북마크 빼기", "하나도 고르지 않으면 내 북마크에만 있고")
 	if strings.Contains(body, "남의 카테고리") {
 		t.Error("다른 사용자의 카테고리가 보인다")
 	}
@@ -282,6 +282,11 @@ func TestSaveAndDeleteBookmark(t *testing.T) {
 	expectCalls(t, a.st, fmt.Sprintf("DeleteBookmark %d 1", uid))
 
 	assertContains(t, a.get("/books/1?done=bookmark-saved", me).Body.String(), "북마크를 저장했습니다.")
+
+	// 카테고리를 하나도 고르지 않고 저장하면 공개 화면에 나오지 않는다고 알린다.
+	expectRedirect(t, a.post("/me/bookmarks/2", url.Values{"category": {"abc"}}, me), "/books/2?done=bookmark-saved-alone#bookmark")
+	expectCalls(t, a.st, fmt.Sprintf("SetBookmark %d 2 []", uid))
+	assertContains(t, a.get("/books/2?done=bookmark-saved-alone", me).Body.String(), "고른 카테고리가 없어서 내 북마크에만 있고")
 }
 
 func TestBookmarkPagesNeedUser(t *testing.T) {
@@ -412,6 +417,25 @@ func TestCategoryPages(t *testing.T) {
 	expectCalls(t, a.st, fmt.Sprintf("DeleteCategory %d 100", uid))
 }
 
+func TestMyBookmarksPageShowsBookmarksOutsideCategories(t *testing.T) {
+	a := newAdminSite(t)
+	uid, me := a.member("hash-me")
+	a.st.marks = map[[2]int64][]int64{{uid, 1}: nil, {uid, 2}: nil}
+
+	// 카테고리가 없으면 모든 북마크가 카테고리 밖이므로 따로 알리지 않는다.
+	body := a.get("/me", me).Body.String()
+	if strings.Contains(body, "카테고리에 넣지 않은 책") {
+		t.Error("카테고리가 없는 사용자에게 카테고리 밖 북마크 안내가 있다")
+	}
+
+	a.st.cats = []book.Category{{ID: 101, UserID: uid, Title: "올해의 SF", Public: true, Code: "sfq", Books: 1}}
+	a.st.marks[[2]int64{uid, 1}] = []int64{101}
+	body = a.get("/me", me).Body.String()
+	// 카테고리를 만든 뒤에는 카테고리 밖의 북마크 수를 알리고, 그 책의 표지 아래에 카테고리 없음을 강조한다.
+	assertContains(t, body, "카테고리에 넣지 않은 책이 1권 있습니다", `<span class="card-meta">올해의 SF</span>`,
+		`<span class="card-meta card-alone">카테고리 없음</span>`)
+}
+
 func TestMyBookmarksPage(t *testing.T) {
 	a := newAdminSite(t)
 	uid, me := a.member("hash-me")
@@ -428,6 +452,9 @@ func TestMyBookmarksPage(t *testing.T) {
 		"북마크 1권", "당신 인생의 이야기", "올해의 SF, 나중에 읽기", "계정 지우기", "계정을 삭제하면 저장한 북마크 정보가 함께 삭제됩니다.")
 	if strings.Contains(body, "/shared/prv") {
 		t.Error("공개하지 않은 카테고리의 주소가 목록에 보인다")
+	}
+	if strings.Contains(body, "카테고리에 넣지 않은 책") || strings.Contains(body, "card-alone") {
+		t.Error("모든 북마크가 카테고리에 있으면 안내가 없어야 한다")
 	}
 
 	// 카테고리 순서를 바꾼다. 첫 카테고리에는 ↑가, 마지막 카테고리에는 ↓가 없다.

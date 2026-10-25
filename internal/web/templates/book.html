@@ -29,6 +29,7 @@
         <legend>넣을 카테고리</legend>
         {{range .Categories}}<label class="check"><input type="checkbox" name="category" value="{{.ID}}" {{if .Checked}}checked{{end}}> {{.Title}}</label>{{end}}
       </fieldset>
+      <p class="hint">고른 카테고리에만 넣습니다. 하나도 고르지 않으면 내 북마크에만 있고, 공개한 카테고리에는 나오지 않습니다.</p>
       {{else}}
       <p class="hint">카테고리를 만들면 북마크를 묶어 둘 수 있습니다. <a href="/me">카테고리 만들기</a></p>
       {{end}}
