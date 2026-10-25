@@ -152,6 +152,17 @@
 | 이미지 | Artifact Registry `abc-library` 저장소(웹은 `asia-southeast1`, 배치는 `asia-northeast3`). 최근 5개만 남긴다 |
 | 실행 일정 | Cloud Scheduler `abc-batch-daily`가 매일 03:00(KST)에 Job을 실행한다. Job이 실패하면 Cloud Monitoring이 메일을 보낸다 |
 
+## 로컬 개발
+
+| 구성 요소 | 위치 |
+|---|---|
+| DB | `compose.yaml`의 `postgres:18`(`localhost:5433`, DB `abc_library`). 운영과 같은 정렬 규칙(builtin `C.UTF-8`)으로 만든다 |
+| 데이터 | `make db-seed`가 넣는 가상의 데모 데이터(`cmd/batch/seed.go`). `make batch-local`로 실제 밴드 글을 넣을 수도 있다 |
+
+- `.envrc`는 운영 값을 담고, 로컬 개발 명령은 Makefile의 `LOCAL_DB`로 `DB_URL`과 `DB_PWD`만 바꿔 쓴다. 로그인 설정과 Claude API 키는 `.envrc`의 값을 그대로 쓴다.
+- `make db-up`은 DB를 띄우고 마이그레이션을 적용한다. `make web`, `make test-integration`, `make db-seed`, `make batch-local`이 먼저 부른다.
+- `batch seed`는 `DB_URL`이 이 컴퓨터(`localhost`, `127.0.0.1`, `::1`)를 가리킬 때만 실행한다.
+
 ## 설정 속성
 
 | 이름 | 설명 |

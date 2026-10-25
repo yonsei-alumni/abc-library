@@ -1,7 +1,9 @@
 # direnv용 설정 속성. 복사해서 .envrc로 저장하고 값을 채운 뒤 direnv allow를 실행한다.
 # .envrc는 비밀 값을 담으므로 커밋하지 않는다.
 
-# DB 연결 URL. 비밀번호는 넣지 않고 DB_PWD로 따로 둔다.
+# 운영 DB(Neon) 연결 URL. 비밀번호는 넣지 않고 DB_PWD로 따로 둔다.
+# make migrate, make batch, make status, make web-prod와 배포 스크립트가 이 값을 쓴다.
+# 로컬 개발 명령(make web, make test-integration, make db-*)은 compose.yaml의 로컬 DB를 쓰므로 여기를 바꾸지 않는다.
 export DB_URL="postgres://<role>@<neon-host>/<database>?sslmode=require"
 export DB_PWD=""
 

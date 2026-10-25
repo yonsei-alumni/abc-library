@@ -1,0 +1,25 @@
+# 로컬 개발용 PostgreSQL. make db-up으로 띄운다.
+# 운영 DB(Neon)와 같은 18 버전, 같은 정렬 규칙(builtin C.UTF-8)으로 만들어서 쿼리 결과의 순서가 같게 한다.
+# 계정과 비밀번호는 이 컴퓨터에서만 쓰는 개발용 값이라 비밀이 아니다. Makefile의 LOCAL_DB와 맞춘다.
+name: abc-library
+
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: abc
+      POSTGRES_PASSWORD: abc
+      POSTGRES_DB: abc_library
+      POSTGRES_INITDB_ARGS: --locale-provider=builtin --locale=C.UTF-8
+    ports:
+      - 127.0.0.1:5433:5432
+    volumes:
+      - db:/var/lib/postgresql
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U abc -d abc_library]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+
+volumes:
+  db:

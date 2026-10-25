@@ -18,6 +18,7 @@
 - `internal/book`(도메인)은 밴드, Claude, DB, HTTP 패키지에 의존하지 않는다. 의존 방향은 바깥 계층에서 도메인 쪽이다.
 - 설정 속성은 환경 변수로 받는다. 로컬에서는 `.envrc`(커밋하지 않음)에 두고, 속성 목록은 `.envrc.example`에 적는다.
 - DB 연결은 `DB_URL`(비밀번호를 뺀 URL)과 `DB_PWD`를 조합한다.
+- `.envrc`의 `DB_URL`은 운영 DB(Neon)를 가리킨다. 로컬 개발(`make web`, `make test-integration`, `make db-*`, `make batch-local`)은 `compose.yaml`의 PostgreSQL을 쓰고, Makefile의 `LOCAL_DB`로 명령마다 연결을 바꾼다. 운영 DB를 쓰는 명령은 `make migrate`, `make batch`, `make status`, `make web-prod`다. 배포 스크립트가 `.envrc`의 `DB_URL`을 운영에 넣으므로 `.envrc`를 로컬 DB로 바꾸지 않는다.
 
 ## 개인 정보
 
@@ -96,7 +97,8 @@
 ## 테스트
 
 - 밴드, Claude, Neon, 교보문고를 호출하는 코드는 인터페이스 뒤에 두고, 단위 테스트는 가짜 구현과 `testdata/`의 고정 데이터로 검증한다. 기본 테스트에서는 외부 서비스를 호출하지 않는다.
-- 실제 서비스를 호출하는 테스트는 `integration` 빌드 태그를 붙이고 `make test-integration`으로 실행한다. DB 테스트는 임시 스키마를 만들어 쓰고 지운다.
+- 실제 서비스를 호출하는 테스트는 `integration` 빌드 태그를 붙이고 `make test-integration`으로 실행한다. DB 테스트는 로컬 PostgreSQL에 임시 스키마를 만들어 쓰고 지운다.
+- 로컬 DB의 데모 데이터(`make db-seed`, `cmd/batch/seed.go`)도 가상의 요약을 쓴다. 실제 밴드 요약을 넣지 않는다.
 - `testdata/`에 실제 밴드 게시글이나 회원 정보를 넣지 않는다. 화면 구조를 흉내 낸 가상의 데이터를 쓴다.
 - 정상 경로만 확인하지 말고 실패해야 하는 경우와 경계값도 함께 검증한다.
 
