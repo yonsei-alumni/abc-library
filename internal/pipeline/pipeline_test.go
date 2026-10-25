@@ -265,3 +265,20 @@ func TestContentHashChangesWithContent(t *testing.T) {
 		t.Error("같은 내용이면 해시가 같아야 한다")
 	}
 }
+
+// 해시가 바뀌면 저장한 글이 모두 바뀐 글로 보여서 다시 추출된다. 계산 방식을 바꾸지 않게 고정값과 비교한다.
+func TestContentHashIsStable(t *testing.T) {
+	at := time.Date(2026, 10, 21, 1, 24, 0, 0, time.UTC)
+	p := band.Post{
+		Text:   "본문",
+		Links:  []book.Link{{URL: "https://example.com/a", Title: "기사"}},
+		Images: []band.Image{{MediaType: "image/png", Data: []byte("사진")}},
+		Comments: []band.Comment{
+			{At: at, Text: "댓글", Links: []book.Link{{URL: "https://example.com/b", Title: ""}}},
+			{At: at.Add(time.Hour), Text: "다른 댓글"},
+		},
+	}
+	if got, want := ContentHash(p), "a1fff221f9b9f79d1b882e7de91fc4d21135192bc0881f1f2a3afea030fef566"; got != want {
+		t.Errorf("ContentHash = %s, want %s", got, want)
+	}
+}

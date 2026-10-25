@@ -15,7 +15,7 @@
 </nav>
 {{end}}
 
-{{define "admin-notice"}}{{with .Notice}}<p class="notice" role="status">{{.}}</p>{{end}}{{with .Error}}<p class="notice notice-error" role="alert">{{.}}</p>{{end}}{{end}}
+{{define "notice"}}{{with .Notice}}<p class="notice" role="status">{{.}}</p>{{end}}{{with .Error}}<p class="notice notice-error" role="alert">{{.}}</p>{{end}}{{end}}
 
 {{define "links"}}{{if .}}<ul class="links">{{range .}}<li><a href="{{.URL}}" target="_blank" rel="noopener nofollow">{{.Title}}</a></li>{{end}}</ul>{{end}}{{end}}
 

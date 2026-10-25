@@ -33,6 +33,11 @@ func DatabaseURL() (string, error) {
 	return u.String(), nil
 }
 
+// BandNo는 수집하고 원문 링크를 만들 ABC 밴드의 번호다(BAND_NO).
+func BandNo() string {
+	return Get("BAND_NO", "102765569")
+}
+
 // Get은 환경 변수의 값을 돌려주고, 값이 없으면 기본값을 돌려준다.
 func Get(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {

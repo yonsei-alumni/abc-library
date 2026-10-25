@@ -100,13 +100,17 @@ func (s *Server) renderAdmin(w http.ResponseWriter, r *http.Request, code int, p
 	if _, ok := data["AdminNav"]; !ok {
 		data["AdminNav"] = ""
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(code)
-	s.render(w, r, page, "layout", data)
+	s.renderPage(w, r, code, page, data)
 }
 
+// done은 고친 뒤 path의 화면으로 돌아가서 notices의 안내를 보이게 한다.
 func done(w http.ResponseWriter, r *http.Request, path, notice string) {
 	http.Redirect(w, r, path+"?done="+notice, http.StatusSeeOther)
+}
+
+// adminBookPath는 책 편집 화면의 주소다.
+func adminBookPath(id int64) string {
+	return fmt.Sprintf("/admin/books/%d", id)
 }
 
 // 태그
@@ -186,7 +190,7 @@ func (s *Server) addTag(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	kind := book.TagKind(r.PostFormValue("kind"))
-	if kind != book.TopicTag && kind != book.KindTag {
+	if !kind.Valid() {
 		s.renderTags(w, r, http.StatusBadRequest, "태그 갈래를 골라 주세요.")
 		return
 	}
@@ -256,12 +260,7 @@ func (s *Server) adminBook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	b, _, err := s.store.Book(r.Context(), id)
-	if errors.Is(err, store.ErrNotFound) {
-		s.notFound(w, r)
-		return
-	}
-	if err != nil {
-		s.fail(w, r, err)
+	if s.failed(w, r, err) {
 		return
 	}
 	s.renderBook(w, r, http.StatusOK, bookForm{Book: b})
@@ -270,12 +269,7 @@ func (s *Server) adminBook(w http.ResponseWriter, r *http.Request) {
 // renderBook은 책 편집 화면을 그린다. 입력에 오류가 있으면 고친 값을 그대로 두고 오류를 보인다.
 func (s *Server) renderBook(w http.ResponseWriter, r *http.Request, code int, f bookForm) {
 	stored, mentions, err := s.store.Book(r.Context(), f.Book.ID)
-	if errors.Is(err, store.ErrNotFound) {
-		s.notFound(w, r)
-		return
-	}
-	if err != nil {
-		s.fail(w, r, err)
+	if s.failed(w, r, err) {
 		return
 	}
 	tags, err := s.store.Tags(r.Context())
@@ -340,7 +334,7 @@ func (s *Server) saveBook(w http.ResponseWriter, r *http.Request) {
 		f.Error = "ISBN-13이 올바르지 않습니다. 978이나 979로 시작하는 13자리 숫자를 입력해 주세요."
 	case tagErr != nil:
 		f.Error = tagErr.Error() + "."
-	case newTag != "" && f.NewTagKind != string(book.TopicTag) && f.NewTagKind != string(book.KindTag):
+	case newTag != "" && !book.TagKind(f.NewTagKind).Valid():
 		f.Error = "새 태그의 갈래를 골라 주세요."
 	}
 	if f.Error != "" {
@@ -361,18 +355,16 @@ func (s *Server) saveBook(w http.ResponseWriter, r *http.Request) {
 	}
 	err := s.store.UpdateBook(r.Context(), b)
 	var dup *store.DuplicateError
-	switch {
-	case errors.As(err, &dup):
+	if errors.As(err, &dup) {
 		f.Error, f.DupID = "같은 ISBN이나 같은 제목과 대표 저자의 책이 이미 있습니다. 같은 책이면 아래에서 그 책으로 합쳐 주세요.", dup.BookID
 		f.MergeTo = strconv.FormatInt(dup.BookID, 10)
 		s.renderBook(w, r, http.StatusConflict, f)
-	case errors.Is(err, store.ErrNotFound):
-		s.notFound(w, r)
-	case err != nil:
-		s.fail(w, r, err)
-	default:
-		done(w, r, fmt.Sprintf("/admin/books/%d", id), "book-saved")
+		return
 	}
+	if s.failed(w, r, err) {
+		return
+	}
+	done(w, r, adminBookPath(id), "book-saved")
 }
 
 func formID(r *http.Request, name string) (int64, bool) {
@@ -387,12 +379,7 @@ func (s *Server) mergeBook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	stored, _, err := s.store.Book(r.Context(), id)
-	if errors.Is(err, store.ErrNotFound) {
-		s.notFound(w, r)
-		return
-	}
-	if err != nil {
-		s.fail(w, r, err)
+	if s.failed(w, r, err) {
 		return
 	}
 	f := bookForm{Book: stored, MergeTo: r.PostFormValue("into")}
@@ -415,7 +402,7 @@ func (s *Server) mergeBook(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		s.fail(w, r, err)
 	default:
-		done(w, r, fmt.Sprintf("/admin/books/%d", into), "book-merged")
+		done(w, r, adminBookPath(into), "book-merged")
 	}
 }
 
@@ -425,15 +412,10 @@ func (s *Server) deleteBook(w http.ResponseWriter, r *http.Request) {
 		s.notFound(w, r)
 		return
 	}
-	err := s.store.DeleteBook(r.Context(), id)
-	switch {
-	case errors.Is(err, store.ErrNotFound):
-		s.notFound(w, r)
-	case err != nil:
-		s.fail(w, r, err)
-	default:
-		done(w, r, fmt.Sprintf("/admin/books/%d", id), "book-deleted")
+	if s.failed(w, r, s.store.DeleteBook(r.Context(), id)) {
+		return
 	}
+	done(w, r, adminBookPath(id), "book-deleted")
 }
 
 // 언급
@@ -487,12 +469,7 @@ func (s *Server) mention(w http.ResponseWriter, r *http.Request) (book.Mention, 
 		return book.Mention{}, false
 	}
 	m, err := s.store.Mention(r.Context(), id)
-	if errors.Is(err, store.ErrNotFound) {
-		s.notFound(w, r)
-		return book.Mention{}, false
-	}
-	if err != nil {
-		s.fail(w, r, err)
+	if s.failed(w, r, err) {
 		return book.Mention{}, false
 	}
 	return m, true
@@ -538,7 +515,7 @@ func (s *Server) saveMention(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	done(w, r, fmt.Sprintf("/admin/books/%d", m.BookID), "mention-saved")
+	done(w, r, adminBookPath(m.BookID), "mention-saved")
 }
 
 func (s *Server) moveMention(w http.ResponseWriter, r *http.Request) {
@@ -559,7 +536,7 @@ func (s *Server) moveMention(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		s.fail(w, r, err)
 	default:
-		done(w, r, fmt.Sprintf("/admin/books/%d", to), "mention-moved")
+		done(w, r, adminBookPath(to), "mention-moved")
 	}
 }
 
@@ -572,7 +549,7 @@ func (s *Server) deleteMention(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	done(w, r, fmt.Sprintf("/admin/books/%d", m.BookID), "mention-deleted")
+	done(w, r, adminBookPath(m.BookID), "mention-deleted")
 }
 
 // 관리자

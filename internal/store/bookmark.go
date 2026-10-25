@@ -6,7 +6,6 @@ import (
 	"slices"
 	"time"
 
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/pgdialect"
 
@@ -15,9 +14,6 @@ import (
 
 // ErrTooMany는 사용자 한 명이 만들 수 있는 수를 넘었다는 뜻이다.
 var ErrTooMany = errors.New("더 만들 수 없습니다")
-
-// visibleBook은 지우지 않은 언급이 있는 책(별칭 b)이다. 관리자가 언급을 모두 지운 책은 북마크 목록에서도 뺀다.
-const visibleBook = `EXISTS (SELECT 1 FROM mentions m WHERE m.book_id = b.id AND NOT m.hidden)`
 
 // UserID는 Google 계정 고유 번호의 HMAC 값으로 사용자를 찾고, 없으면 만들어서 번호를 돌려준다.
 func (s *Store) UserID(ctx context.Context, subjectHash string) (int64, error) {
@@ -36,11 +32,7 @@ func (s *Store) UserExists(ctx context.Context, id int64) (bool, error) {
 
 // DeleteUser는 사용자와 그 사용자의 북마크, 카테고리를 모두 지운다.
 func (s *Store) DeleteUser(ctx context.Context, id int64) error {
-	res, err := s.db.NewRaw(`DELETE FROM users WHERE id = ?`, id).Exec(ctx)
-	if err != nil {
-		return err
-	}
-	return expectRow(res, ErrNotFound)
+	return notFoundIfNone(s.db.NewRaw(`DELETE FROM users WHERE id = ?`, id).Exec(ctx))
 }
 
 type categoryRow struct {
@@ -85,14 +77,7 @@ const categoryOrder = `c.position, c.created_at, c.id`
 func (s *Store) categories(ctx context.Context, where, order string, args ...any) ([]book.Category, error) {
 	var views []categoryView
 	err := s.db.NewRaw(`SELECT `+categoryColumns+` FROM bookmark_categories c WHERE `+where+` ORDER BY `+order, args...).Scan(ctx, &views)
-	if err != nil {
-		return nil, err
-	}
-	cs := make([]book.Category, len(views))
-	for i, v := range views {
-		cs[i] = v.toCategory()
-	}
-	return cs, nil
+	return convert(views, categoryView.toCategory), err
 }
 
 // Categories는 사용자의 카테고리를 사용자가 정한 순서로 돌려준다.
@@ -143,14 +128,7 @@ func (s *Store) CategoryBooks(ctx context.Context, categoryID int64) ([]book.Boo
 		FROM bookmark_category_books cb JOIN books b ON b.id = cb.book_id
 		WHERE cb.category_id = ? AND `+visibleBook+`
 		ORDER BY `+categoryBookOrder, categoryID).Scan(ctx, &views)
-	if err != nil {
-		return nil, err
-	}
-	books := make([]book.Book, len(views))
-	for i, v := range views {
-		books[i] = v.toBook()
-	}
-	return books, nil
+	return convert(views, bookView.toBook), err
 }
 
 // AddCategory는 카테고리를 맨 뒤에 만들고 번호를 돌려준다. 공개 주소의 코드는 새로 뽑는다.
@@ -179,18 +157,14 @@ func (s *Store) AddCategory(ctx context.Context, userID int64, c book.Category) 
 
 // UpdateCategory는 사용자의 카테고리를 고친다. 공개 주소의 코드는 그대로 둔다.
 func (s *Store) UpdateCategory(ctx context.Context, userID int64, c book.Category) error {
-	res, err := s.db.NewUpdate().Model((*categoryRow)(nil)).
+	return notFoundIfNone(s.db.NewUpdate().Model((*categoryRow)(nil)).
 		Set("title = ?", c.Title).
 		Set("body = ?", c.Body).
 		Set("public_title = ?", c.PublicTitle).
 		Set("public = ?", c.Public).
 		Set("updated_at = now()").
 		Where("id = ? AND user_id = ?", c.ID, userID).
-		Exec(ctx)
-	if err != nil {
-		return err
-	}
-	return expectRow(res, ErrNotFound)
+		Exec(ctx))
 }
 
 // MoveCategory는 사용자의 카테고리를 한 칸 앞(up)이나 뒤로 옮긴다. 이미 끝에 있으면 그대로 둔다.
@@ -235,11 +209,7 @@ func swapNeighbor(ids []int64, id int64, up bool) bool {
 
 // DeleteCategory는 사용자의 카테고리를 지운다. 그 안의 북마크는 남는다.
 func (s *Store) DeleteCategory(ctx context.Context, userID, id int64) error {
-	res, err := s.db.NewRaw(`DELETE FROM bookmark_categories WHERE id = ? AND user_id = ?`, id, userID).Exec(ctx)
-	if err != nil {
-		return err
-	}
-	return expectRow(res, ErrNotFound)
+	return notFoundIfNone(s.db.NewRaw(`DELETE FROM bookmark_categories WHERE id = ? AND user_id = ?`, id, userID).Exec(ctx))
 }
 
 // Bookmark는 사용자가 그 책을 북마크했는지와, 그 책을 넣은 카테고리의 번호를 돌려준다.
@@ -265,13 +235,9 @@ func (s *Store) SetBookmark(ctx context.Context, userID, bookID int64, categoryI
 		if err != nil {
 			return err
 		}
-		ids := categoryIDs
-		if ids == nil {
-			ids = []int64{}
-		}
 		// 이미 넣은 카테고리는 넣은 시각을 남기려고 지우지 않는다.
 		_, err = tx.NewRaw(`DELETE FROM bookmark_category_books WHERE user_id = ? AND book_id = ? AND NOT (category_id = ANY (?))`,
-			userID, bookID, pgdialect.Array(ids)).Exec(ctx)
+			userID, bookID, pgdialect.Array(nonNil(categoryIDs))).Exec(ctx)
 		if err != nil || len(categoryIDs) == 0 {
 			return err
 		}
@@ -329,17 +295,17 @@ func (s *Store) ReorderCategoryBooks(ctx context.Context, userID, categoryID int
 
 // DeleteBookmark는 북마크를 지운다. 그 책은 카테고리에서도 빠진다.
 func (s *Store) DeleteBookmark(ctx context.Context, userID, bookID int64) error {
-	res, err := s.db.NewRaw(`DELETE FROM bookmarks WHERE user_id = ? AND book_id = ?`, userID, bookID).Exec(ctx)
-	if err != nil {
-		return err
-	}
-	return expectRow(res, ErrNotFound)
+	return notFoundIfNone(s.db.NewRaw(`DELETE FROM bookmarks WHERE user_id = ? AND book_id = ?`, userID, bookID).Exec(ctx))
 }
 
 type bookmarkView struct {
 	bookView
 	At         time.Time `bun:"at"`
 	Categories []int64   `bun:"categories,array"`
+}
+
+func (v bookmarkView) toBookmark() book.Bookmark {
+	return book.Bookmark{Book: v.toBook(), At: v.At, Categories: v.Categories}
 }
 
 // Bookmarks는 사용자의 북마크를 최근에 북마크한 순서로 돌려준다. 순서는 카테고리 안에서만 바꾼다.
@@ -352,17 +318,5 @@ func (s *Store) Bookmarks(ctx context.Context, userID int64) ([]book.Bookmark, e
 		FROM bookmarks k JOIN books b ON b.id = k.book_id
 		WHERE k.user_id = ? AND `+visibleBook+`
 		ORDER BY k.created_at DESC, b.id`, userID).Scan(ctx, &views)
-	if err != nil {
-		return nil, err
-	}
-	marks := make([]book.Bookmark, len(views))
-	for i, v := range views {
-		marks[i] = book.Bookmark{Book: v.toBook(), At: v.At, Categories: v.Categories}
-	}
-	return marks, nil
-}
-
-func isForeignKeyViolation(err error) bool {
-	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == "23503"
+	return convert(views, bookmarkView.toBookmark), err
 }

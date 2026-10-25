@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	_ "github.com/jackc/pgx/v5/stdlib" // database/sql용 pgx 드라이버
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/pgdialect"
@@ -22,8 +23,67 @@ import (
 //go:embed migrations/*.sql
 var migrationFiles embed.FS
 
-// ErrNotFound는 찾는 행이 없다는 뜻이다.
-var ErrNotFound = errors.New("찾는 데이터가 없습니다")
+var (
+	// ErrNotFound는 찾는 행이 없다는 뜻이다.
+	ErrNotFound = errors.New("찾는 데이터가 없습니다")
+	// ErrConflict는 같은 이름이나 주소가 이미 있다는 뜻이다.
+	ErrConflict = errors.New("이미 있는 데이터와 겹칩니다")
+)
+
+// PostgreSQL 오류 코드. https://www.postgresql.org/docs/current/errcodes-appendix.html
+const (
+	uniqueViolation     = "23505"
+	foreignKeyViolation = "23503"
+)
+
+func isUniqueViolation(err error) bool     { return hasPgCode(err, uniqueViolation) }
+func isForeignKeyViolation(err error) bool { return hasPgCode(err, foreignKeyViolation) }
+
+func hasPgCode(err error, code string) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == code
+}
+
+// notFoundIfNone은 고치거나 지운 행이 없으면 ErrNotFound를 돌려준다.
+func notFoundIfNone(res sql.Result, err error) error {
+	return expectRow(res, err, ErrNotFound)
+}
+
+// conflictIfNone은 더한 행이 없으면 ErrConflict를 돌려준다. ON CONFLICT DO NOTHING으로 더하는 쿼리에 쓴다.
+func conflictIfNone(res sql.Result, err error) error {
+	return expectRow(res, err, ErrConflict)
+}
+
+func expectRow(res sql.Result, err, ifNone error) error {
+	if err != nil {
+		return err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ifNone
+	}
+	return nil
+}
+
+// convert는 조회한 행을 도메인 값으로 바꾼다.
+func convert[R, T any](rows []R, to func(R) T) []T {
+	out := make([]T, len(rows))
+	for i, r := range rows {
+		out[i] = to(r)
+	}
+	return out
+}
+
+// nonNil은 nil 슬라이스를 빈 슬라이스로 바꾼다. NOT NULL인 배열과 JSON 컬럼에 NULL 대신 빈 값을 넣는다.
+func nonNil[T any](s []T) []T {
+	if s == nil {
+		return []T{}
+	}
+	return s
+}
 
 // Store는 DB 연결이다.
 type Store struct {
@@ -119,6 +179,9 @@ const bookColumns = `b.id, coalesce(b.isbn13, '') AS isbn13, b.title, b.authors,
 // tagOrder는 tags 테이블(별칭 g)의 태그를 정해진 순서로 늘어놓는다.
 const tagOrder = `ORDER BY g.kind = 'topic' DESC, g.position, g.name`
 
+// visibleBook은 지우지 않은 언급이 있는 책(별칭 b)이다. 관리자가 언급을 모두 지운 책은 목록에서 뺀다.
+const visibleBook = `EXISTS (SELECT 1 FROM mentions m WHERE m.book_id = b.id AND NOT m.hidden)`
+
 type mentionRow struct {
 	bun.BaseModel `bun:"table:mentions"`
 
@@ -213,12 +276,8 @@ func (s *Store) SavePost(ctx context.Context, p book.Post, findings []book.Findi
 					continue
 				}
 				saved[key] = true
-				links := m.Links
-				if links == nil {
-					links = []book.Link{}
-				}
 				_, err = tx.NewInsert().Model(&mentionRow{
-					BookID: bookID, PostID: row.ID, Kind: m.Kind, MentionedAt: m.At, Summary: m.Summary, Links: links,
+					BookID: bookID, PostID: row.ID, Kind: m.Kind, MentionedAt: m.At, Summary: m.Summary, Links: nonNil(m.Links),
 				}).Exec(ctx)
 				if err != nil {
 					return err
@@ -260,11 +319,7 @@ func upsertBook(ctx context.Context, tx bun.Tx, b book.Book) (int64, error) {
 	var id int64
 	switch {
 	case len(found) == 0:
-		authors := b.Authors
-		if authors == nil {
-			authors = []string{}
-		}
-		row := &bookRow{ISBN13: b.ISBN13, Title: b.Title, Authors: authors, Publisher: b.Publisher, KyoboPID: b.KyoboPID}
+		row := &bookRow{ISBN13: b.ISBN13, Title: b.Title, Authors: nonNil(b.Authors), Publisher: b.Publisher, KyoboPID: b.KyoboPID}
 		if _, err := tx.NewInsert().Model(row).Returning("id").Exec(ctx); err != nil {
 			return 0, err
 		}
@@ -273,14 +328,7 @@ func upsertBook(ctx context.Context, tx bun.Tx, b book.Book) (int64, error) {
 		return found[0].ID, addKeys(ctx, tx, found[0].ID, keys)
 	default:
 		id = found[0].ID
-		_, err = tx.NewUpdate().Model((*bookRow)(nil)).
-			Set("isbn13 = coalesce(isbn13, nullif(?, ''))", b.ISBN13).
-			Set("kyobo_pid = coalesce(kyobo_pid, nullif(?, ''))", b.KyoboPID).
-			Set("publisher = CASE WHEN publisher = '' THEN ? ELSE publisher END", b.Publisher).
-			Set("updated_at = now()").
-			Where("id = ?", id).
-			Exec(ctx)
-		if err != nil {
+		if err := fillMissingInfo(ctx, tx, id, b); err != nil {
 			return 0, err
 		}
 	}
@@ -292,6 +340,27 @@ func upsertBook(ctx context.Context, tx bun.Tx, b book.Book) (int64, error) {
 		}
 	}
 	return id, addKeys(ctx, tx, id, keys)
+}
+
+// fillMissingInfo는 책에 비어 있는 ISBN, 교보문고 상품 번호, 출판사만 from의 값으로 채운다. 이미 있는 값은 바꾸지 않는다.
+func fillMissingInfo(ctx context.Context, db bun.IDB, id int64, from book.Book) error {
+	_, err := db.NewUpdate().Model((*bookRow)(nil)).
+		Set("isbn13 = coalesce(isbn13, nullif(?, ''))", from.ISBN13).
+		Set("kyobo_pid = coalesce(kyobo_pid, nullif(?, ''))", from.KyoboPID).
+		Set("publisher = CASE WHEN publisher = '' THEN ? ELSE publisher END", from.Publisher).
+		Set("updated_at = now()").
+		Where("id = ?", id).
+		Exec(ctx)
+	return err
+}
+
+// requireBook은 책이 없으면 ErrNotFound를 돌려준다.
+func requireBook(ctx context.Context, db bun.IDB, id int64) error {
+	exists, err := db.NewSelect().Model((*bookRow)(nil)).Where("id = ?", id).Exists(ctx)
+	if err == nil && !exists {
+		return ErrNotFound
+	}
+	return err
 }
 
 // bookKeys는 배치가 같은 책을 찾는 키다. 작품 키와, ISBN이 있으면 'isbn:'을 붙인 ISBN이다.
@@ -327,6 +396,11 @@ type entryRow struct {
 	Mentions   int       `bun:"book_mentions"`
 }
 
+func (r entryRow) toEntry() book.Entry {
+	return book.Entry{Book: r.toBook(), PostNo: r.BandPostNo, PostedAt: r.PostedAt, IsNew: r.IsNew, Summary: r.Summary,
+		Comments: r.Comments, Mentions: r.Mentions}
+}
+
 // Timeline은 최근 소식을 시각의 역순으로 돌려준다. 같은 글에서 같은 책을 여러 번 다뤘으면 소식 하나로 묶는다.
 func (s *Store) Timeline(ctx context.Context, limit, offset int) ([]book.Entry, error) {
 	var rows []entryRow
@@ -345,15 +419,7 @@ func (s *Store) Timeline(ctx context.Context, limit, offset int) ([]book.Entry, 
 		FROM news n JOIN books b ON b.id = n.book_id
 		ORDER BY n.posted_at DESC, b.id
 		LIMIT ? OFFSET ?`, limit, offset).Scan(ctx, &rows)
-	if err != nil {
-		return nil, err
-	}
-	entries := make([]book.Entry, len(rows))
-	for i, r := range rows {
-		entries[i] = book.Entry{Book: r.toBook(), PostNo: r.BandPostNo, PostedAt: r.PostedAt, IsNew: r.IsNew, Summary: r.Summary,
-			Comments: r.Comments, Mentions: r.Mentions}
-	}
-	return entries, nil
+	return convert(rows, entryRow.toEntry), err
 }
 
 // Filter는 책 목록의 조건이다. 빈 값은 조건을 걸지 않는다.
@@ -368,6 +434,10 @@ type shelvedRow struct {
 	bookView
 	LastPostedAt time.Time `bun:"last_posted_at"`
 	PostCount    int       `bun:"post_count"`
+}
+
+func (r shelvedRow) toShelved() book.Shelved {
+	return book.Shelved{Book: r.toBook(), LastPostedAt: r.LastPostedAt, PostCount: r.PostCount}
 }
 
 // Books는 조건에 맞는 책을 마지막으로 다뤄진 순서로 돌려준다.
@@ -387,14 +457,7 @@ func (s *Store) Books(ctx context.Context, f Filter, limit, offset int) ([]book.
 		ORDER BY last_posted_at DESC, b.id
 		LIMIT ? OFFSET ?`,
 		f.Tag, f.Tag, f.Author, f.Author, pattern, pattern, pattern, pattern, limit, offset).Scan(ctx, &rows)
-	if err != nil {
-		return nil, err
-	}
-	shelf := make([]book.Shelved, len(rows))
-	for i, r := range rows {
-		shelf[i] = book.Shelved{Book: r.toBook(), LastPostedAt: r.LastPostedAt, PostCount: r.PostCount}
-	}
-	return shelf, nil
+	return convert(rows, shelvedRow.toShelved), err
 }
 
 // likePattern은 검색어를 squash와 같은 방식(소문자, 공백 제거)으로 바꾸고 LIKE 특수 문자를 이스케이프한다.
@@ -434,25 +497,24 @@ func (s *Store) Book(ctx context.Context, id int64) (book.Book, []book.Mention, 
 	if len(views) == 0 {
 		return book.Book{}, nil, ErrNotFound
 	}
-	var rows []mentionView
-	err := s.db.NewRaw(`
-		SELECT `+mentionColumns+`
-		FROM mentions m
-		JOIN posts p ON p.id = m.post_id
-		WHERE m.book_id = ? AND NOT m.hidden
-		ORDER BY m.mentioned_at, m.id`, id).Scan(ctx, &rows)
+	mentions, err := s.visibleMentions(ctx, `m.book_id = ?`, id)
 	if err != nil {
 		return book.Book{}, nil, err
-	}
-	mentions := make([]book.Mention, len(rows))
-	for i, r := range rows {
-		mentions[i] = r.toMention()
 	}
 	return views[0].toBook(), mentions, nil
 }
 
-// mentionColumns는 mentionView로 읽을 언급 컬럼이다. 언급의 별칭은 m, 게시글의 별칭은 p다.
-const mentionColumns = `m.id, m.book_id, p.band_post_no, m.kind, m.mentioned_at, m.summary, m.links`
+// visibleMentions는 조건(언급의 별칭 m)에 맞는 언급 중 관리자가 지우지 않은 것을 오래된 순서로 돌려준다.
+// 화면에 보일 언급은 모두 여기서 읽는다.
+func (s *Store) visibleMentions(ctx context.Context, where string, args ...any) ([]book.Mention, error) {
+	var rows []mentionView
+	err := s.db.NewRaw(`
+		SELECT m.id, m.book_id, p.band_post_no, m.kind, m.mentioned_at, m.summary, m.links
+		FROM mentions m JOIN posts p ON p.id = m.post_id
+		WHERE `+where+` AND NOT m.hidden
+		ORDER BY m.mentioned_at, m.id`, args...).Scan(ctx, &rows)
+	return convert(rows, mentionView.toMention), err
+}
 
 func (r mentionView) toMention() book.Mention {
 	return book.Mention{ID: r.ID, BookID: r.BookID, PostNo: r.BandPostNo, Kind: r.Kind, At: r.MentionedAt, Summary: r.Summary, Links: r.Links}
@@ -473,22 +535,22 @@ func (s *Store) AuthorCounts(ctx context.Context) ([]book.Count, error) {
 	return s.counts(ctx, `
 		SELECT a AS name, count(*) AS books
 		FROM books b, unnest(b.authors) AS a
-		WHERE EXISTS (SELECT 1 FROM mentions m WHERE m.book_id = b.id AND NOT m.hidden)
+		WHERE `+visibleBook+`
 		GROUP BY a
 		ORDER BY books DESC, name`)
 }
 
 func (s *Store) counts(ctx context.Context, query string) ([]book.Count, error) {
-	var rows []struct {
-		Name  string `bun:"name"`
-		Books int    `bun:"books"`
-	}
-	if err := s.db.NewRaw(query).Scan(ctx, &rows); err != nil {
-		return nil, err
-	}
-	counts := make([]book.Count, len(rows))
-	for i, r := range rows {
-		counts[i] = book.Count{Name: r.Name, Books: r.Books}
-	}
-	return counts, nil
+	var rows []countRow
+	err := s.db.NewRaw(query).Scan(ctx, &rows)
+	return convert(rows, countRow.toCount), err
+}
+
+type countRow struct {
+	Name  string `bun:"name"`
+	Books int    `bun:"books"`
+}
+
+func (r countRow) toCount() book.Count {
+	return book.Count{Name: r.Name, Books: r.Books}
 }

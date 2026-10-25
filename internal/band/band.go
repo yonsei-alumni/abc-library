@@ -385,14 +385,6 @@ func (c *Crawler) download(src string) (Image, error) {
 
 var timeRe = regexp.MustCompile(`(?:(\d{4})년\s*)?(\d{1,2})월\s*(\d{1,2})일\s*(오전|오후)\s*(\d{1,2}):(\d{2})`)
 
-var seoul = func() *time.Location {
-	loc, err := time.LoadLocation("Asia/Seoul")
-	if err != nil {
-		return time.FixedZone("KST", 9*60*60)
-	}
-	return loc
-}()
-
 // ParseTime은 "2026년 10월 23일 오후 8:09" 형식의 게시 시각을 읽는다.
 // 올해 글처럼 연도가 빠져 있으면 now의 연도로 보고, 그 시각이 미래면 작년으로 본다.
 func ParseTime(s string, now time.Time) (time.Time, error) {
@@ -400,7 +392,7 @@ func ParseTime(s string, now time.Time) (time.Time, error) {
 	if m == nil {
 		return time.Time{}, fmt.Errorf("게시 시각 %q를 읽지 못했습니다", s)
 	}
-	now = now.In(seoul)
+	now = now.In(book.Seoul)
 	year := now.Year()
 	if m[1] != "" {
 		year, _ = strconv.Atoi(m[1])
@@ -415,7 +407,7 @@ func ParseTime(s string, now time.Time) (time.Time, error) {
 	if m[4] == "오후" {
 		hour += 12
 	}
-	t := time.Date(year, time.Month(month), day, hour, minute, 0, 0, seoul)
+	t := time.Date(year, time.Month(month), day, hour, minute, 0, 0, book.Seoul)
 	if m[1] == "" && t.After(now) {
 		t = t.AddDate(-1, 0, 0)
 	}

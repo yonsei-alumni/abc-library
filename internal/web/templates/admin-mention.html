@@ -2,7 +2,7 @@
 <div class="admin" hx-boost="false">
 <p class="breadcrumb"><a href="/admin/books/{{.Book.ID}}">← {{.Book.Title}}</a></p>
 <h1 class="page-title">언급 편집</h1>
-{{template "admin-notice" .}}
+{{template "notice" .}}
 <p class="mention-meta">
   <span class="kind {{if eq .Mention.Kind "comment"}}kind-comment{{end}}">{{if eq .Mention.Kind "post"}}게시글{{else}}댓글{{end}}</span>
   <time datetime="{{isoDate .Mention.At}}">{{date .Mention.At}}</time> · <a href="{{postURL .Mention.PostNo}}" target="_blank" rel="noopener">밴드 {{.Mention.PostNo}}번 글</a>

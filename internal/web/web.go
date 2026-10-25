@@ -29,6 +29,7 @@ var templateFiles embed.FS
 //go:embed static
 var staticFiles embed.FS
 
+// pageSize는 목록 한 쪽의 항목 수다. 목록은 한 쪽보다 하나 더 읽어서 다음 쪽이 있는지 안다.
 const pageSize = 24
 
 // Store는 화면에 필요한 조회와 관리 화면의 수정이다. *store.Store가 구현한다.
@@ -118,9 +119,9 @@ func New(st Store, cfg Config, log *slog.Logger) (*Server, error) {
 		return nil, errors.New("사용자 로그인에는 Login과 Sessions가 있어야 합니다")
 	}
 	funcs := template.FuncMap{
-		"date":     func(t time.Time) string { return t.In(seoul).Format("2006년 1월 2일") },
-		"isoDate":  func(t time.Time) string { return t.In(seoul).Format("2006-01-02") },
-		"isoTime":  func(t time.Time) string { return t.In(seoul).Format(time.RFC3339) },
+		"date":     func(t time.Time) string { return t.In(book.Seoul).Format("2006년 1월 2일") },
+		"isoDate":  func(t time.Time) string { return t.In(book.Seoul).Format("2006-01-02") },
+		"isoTime":  func(t time.Time) string { return t.In(book.Seoul).Format(time.RFC3339) },
 		"cover":    func(b book.Book) string { return coverURL(b, 240) },
 		"coverBig": func(b book.Book) string { return coverURL(b, 458) },
 		"buyURL":   buyURL,
@@ -143,14 +144,6 @@ func New(st Store, cfg Config, log *slog.Logger) (*Server, error) {
 	}
 	return s, nil
 }
-
-var seoul = func() *time.Location {
-	loc, err := time.LoadLocation("Asia/Seoul")
-	if err != nil {
-		return time.FixedZone("KST", 9*60*60)
-	}
-	return loc
-}()
 
 // staticURL은 정적 파일 주소에 내용 해시를 붙인다. 파일이 바뀌면 주소가 바뀌어서 브라우저 캐시를 피한다.
 func staticURL(name string) string {
@@ -250,9 +243,22 @@ func page(r *http.Request) int {
 	return p
 }
 
-// isMore는 HTMX의 '더 보기' 요청인지 알려 준다. 이때는 목록 조각만 그린다.
-func isMore(r *http.Request) bool {
-	return r.Header.Get("HX-Request") == "true" && strings.HasSuffix(r.Header.Get("HX-Target"), "-more")
+// trimPage는 한 쪽보다 하나 더 읽은 목록을 한 쪽으로 자르고 다음 쪽 번호를 돌려준다. 다음 쪽이 없으면 0이다.
+func trimPage[T any](items []T, p int) ([]T, int) {
+	if len(items) > pageSize {
+		return items[:pageSize], p + 1
+	}
+	return items, 0
+}
+
+// renderList는 HTMX의 '더 보기' 요청이면 이어 붙일 목록 조각(items)만, 아니면 화면 전체를 그린다.
+func (s *Server) renderList(w http.ResponseWriter, r *http.Request, page, items string, data map[string]any) {
+	more := r.Header.Get("HX-Request") == "true" && strings.HasSuffix(r.Header.Get("HX-Target"), "-more")
+	if more {
+		s.render(w, r, page, items, data)
+		return
+	}
+	s.render(w, r, page, "layout", data)
 }
 
 func (s *Server) timeline(w http.ResponseWriter, r *http.Request) {
@@ -262,16 +268,10 @@ func (s *Server) timeline(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	more := len(entries) > pageSize
-	if more {
-		entries = entries[:pageSize]
-	}
-	data := map[string]any{"Title": "최근 소식", "Nav": "timeline", "Entries": entries, "NextPage": nextPage(more, p)}
-	if isMore(r) {
-		s.render(w, r, "timeline", "timeline-items", data)
-		return
-	}
-	s.render(w, r, "timeline", "layout", data)
+	entries, next := trimPage(entries, p)
+	s.renderList(w, r, "timeline", "timeline-items", map[string]any{
+		"Title": "최근 소식", "Nav": "timeline", "Entries": entries, "NextPage": next,
+	})
 }
 
 func (s *Server) books(w http.ResponseWriter, r *http.Request) {
@@ -283,10 +283,7 @@ func (s *Server) books(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	more := len(shelf) > pageSize
-	if more {
-		shelf = shelf[:pageSize]
-	}
+	shelf, next := trimPage(shelf, p)
 	title := "모든 책"
 	switch {
 	case f.Query != "":
@@ -296,28 +293,23 @@ func (s *Server) books(w http.ResponseWriter, r *http.Request) {
 	case f.Author != "":
 		title = f.Author + "의 책"
 	}
-	data := map[string]any{"Title": title, "Nav": "books", "Filter": f, "Query": f.Query, "Shelf": shelf, "NextPage": nextPage(more, p)}
-	if isMore(r) {
-		s.render(w, r, "books", "book-cards", data)
-		return
-	}
-	s.render(w, r, "books", "layout", data)
+	s.renderList(w, r, "books", "book-cards", map[string]any{
+		"Title": title, "Nav": "books", "Filter": f, "Query": f.Query, "Shelf": shelf, "NextPage": next,
+	})
 }
 
 func (s *Server) book(w http.ResponseWriter, r *http.Request) {
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
+	id, ok := pathID(r)
+	if !ok {
 		s.notFound(w, r)
 		return
 	}
 	b, mentions, err := s.store.Book(r.Context(), id)
 	// 관리자가 언급을 모두 지운 책은 관리자에게만 보인다.
-	if errors.Is(err, store.ErrNotFound) || (err == nil && len(mentions) == 0 && adminEmail(r) == "") {
-		s.notFound(w, r)
-		return
+	if err == nil && len(mentions) == 0 && adminEmail(r) == "" {
+		err = store.ErrNotFound
 	}
-	if err != nil {
-		s.fail(w, r, err)
+	if s.failed(w, r, err) {
 		return
 	}
 	tags, err := s.store.Tags(r.Context())
@@ -389,13 +381,6 @@ func (s *Server) authors(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "authors", "layout", map[string]any{"Title": "저자", "Nav": "authors", "Counts": counts})
 }
 
-func nextPage(more bool, p int) int {
-	if more {
-		return p + 1
-	}
-	return 0
-}
-
 func (s *Server) render(w http.ResponseWriter, r *http.Request, page, name string, data map[string]any) {
 	data["Admin"] = adminEmail(r)
 	data["User"] = userID(r) != 0
@@ -411,18 +396,37 @@ func (s *Server) render(w http.ResponseWriter, r *http.Request, page, name strin
 	}
 }
 
+// renderPage는 상태 코드와 함께 화면 전체를 그린다. 입력 오류를 보이는 화면처럼 200이 아닐 때 쓴다.
+func (s *Server) renderPage(w http.ResponseWriter, r *http.Request, code int, page string, data map[string]any) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(code)
+	s.render(w, r, page, "layout", data)
+}
+
 func (s *Server) notFound(w http.ResponseWriter, r *http.Request) {
 	s.status(w, r, http.StatusNotFound, "찾을 수 없습니다", "찾는 책이 없습니다.")
 }
 
 // status는 상태 코드와 함께 안내 화면을 그린다.
 func (s *Server) status(w http.ResponseWriter, r *http.Request, code int, title, message string) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(code)
-	s.render(w, r, "error", "layout", map[string]any{"Title": title, "Message": message})
+	s.renderPage(w, r, code, "error", map[string]any{"Title": title, "Message": message})
 }
 
 func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	s.log.Error("요청 처리 실패", "path", r.URL.Path, "오류", err)
 	s.status(w, r, http.StatusInternalServerError, "오류", "잠시 후 다시 시도해 주세요.")
+}
+
+// failed는 저장소가 돌려준 오류를 화면으로 알리고 참을 돌려준다. 찾는 것이 없으면 404, 그 밖의 오류는 500이다.
+// 오류가 없으면 아무것도 그리지 않고 거짓을 돌려준다.
+func (s *Server) failed(w http.ResponseWriter, r *http.Request, err error) bool {
+	switch {
+	case err == nil:
+		return false
+	case errors.Is(err, store.ErrNotFound):
+		s.notFound(w, r)
+	default:
+		s.fail(w, r, err)
+	}
+	return true
 }

@@ -147,6 +147,12 @@ func process(ctx context.Context, src Source, ex Extractor, st Store, opts Optio
 			log.Error("처리하지 못한 글을 기록하지 못했다", "글", no, "오류", err)
 		}
 	}
+	// fail은 처리하지 못한 글을 세고 기록해서 다음 실행에서 다시 시도하게 한다.
+	fail := func(no int, what string, err error) {
+		r.Failed++
+		log.Error(what, "글", no, "오류", err)
+		markPending(no, store.PendingFailed, err)
+	}
 
 	for _, no := range targets {
 		if opts.Limit > 0 && r.Extracted+r.Failed >= opts.Limit {
@@ -166,9 +172,7 @@ func process(ctx context.Context, src Source, ex Extractor, st Store, opts Optio
 			markPending(no, store.PendingMissing, nil)
 			continue
 		case err != nil:
-			r.Failed++
-			log.Error("게시글을 읽지 못했다", "글", no, "오류", err)
-			markPending(no, store.PendingFailed, err)
+			fail(no, "게시글을 읽지 못했다", err)
 			continue
 		}
 
@@ -186,15 +190,11 @@ func process(ctx context.Context, src Source, ex Extractor, st Store, opts Optio
 			log.Warn("Claude가 게시글 처리를 거절했다", "글", no)
 			findings = nil
 		} else if err != nil {
-			r.Failed++
-			log.Error("책을 추출하지 못했다", "글", no, "오류", err)
-			markPending(no, store.PendingFailed, err)
+			fail(no, "책을 추출하지 못했다", err)
 			continue
 		}
 		if err := st.SavePost(ctx, book.Post{No: no, PostedAt: post.PostedAt, ContentHash: hash}, findings); err != nil {
-			r.Failed++
-			log.Error("저장하지 못했다", "글", no, "오류", err)
-			markPending(no, store.PendingFailed, err)
+			fail(no, "저장하지 못했다", err)
 			continue
 		}
 		r.Extracted++
@@ -211,19 +211,20 @@ func process(ctx context.Context, src Source, ex Extractor, st Store, opts Optio
 // ContentHash는 게시글 내용(본문, 링크, 사진, 댓글)이 바뀌었는지 알기 위한 해시다.
 func ContentHash(p band.Post) string {
 	h := sha256.New()
-	_, _ = fmt.Fprintf(h, "%s\x00", p.Text)
-	for _, l := range p.Links {
-		_, _ = fmt.Fprintf(h, "%s\x00%s\x00", l.URL, l.Title)
+	writeLinks := func(links []book.Link) {
+		for _, l := range links {
+			_, _ = fmt.Fprintf(h, "%s\x00%s\x00", l.URL, l.Title)
+		}
 	}
+	_, _ = fmt.Fprintf(h, "%s\x00", p.Text)
+	writeLinks(p.Links)
 	for _, img := range p.Images {
 		sum := sha256.Sum256(img.Data)
 		h.Write(sum[:])
 	}
 	for _, c := range p.Comments {
 		_, _ = fmt.Fprintf(h, "c\x00%s\x00%s\x00", c.At.UTC().Format(time.RFC3339), c.Text)
-		for _, l := range c.Links {
-			_, _ = fmt.Fprintf(h, "%s\x00%s\x00", l.URL, l.Title)
-		}
+		writeLinks(c.Links)
 	}
 	return hex.EncodeToString(h.Sum(nil))
 }

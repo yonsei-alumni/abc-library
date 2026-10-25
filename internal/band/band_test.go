@@ -8,21 +8,23 @@ import (
 	"time"
 
 	"github.com/mxschmitt/playwright-go"
+
+	"github.com/yonsei-alumni/abc-library/internal/book"
 )
 
 func TestParseTime(t *testing.T) {
-	now := time.Date(2026, 10, 24, 12, 0, 0, 0, seoul)
+	now := time.Date(2026, 10, 24, 12, 0, 0, 0, book.Seoul)
 	tests := []struct {
 		in   string
 		want time.Time
 	}{
-		{"2026년 10월 23일 오후 8:09", time.Date(2026, 10, 23, 20, 9, 0, 0, seoul)},
-		{"2026년 10월 21일 오전 1:24", time.Date(2026, 10, 21, 1, 24, 0, 0, seoul)},
-		{"2026년 3월 5일 오후 12:30", time.Date(2026, 3, 5, 12, 30, 0, 0, seoul)},
-		{"2026년 3월 5일 오전 12:30", time.Date(2026, 3, 5, 0, 30, 0, 0, seoul)},
-		{"10월 23일 오후 8:09", time.Date(2026, 10, 23, 20, 9, 0, 0, seoul)},
+		{"2026년 10월 23일 오후 8:09", time.Date(2026, 10, 23, 20, 9, 0, 0, book.Seoul)},
+		{"2026년 10월 21일 오전 1:24", time.Date(2026, 10, 21, 1, 24, 0, 0, book.Seoul)},
+		{"2026년 3월 5일 오후 12:30", time.Date(2026, 3, 5, 12, 30, 0, 0, book.Seoul)},
+		{"2026년 3월 5일 오전 12:30", time.Date(2026, 3, 5, 0, 30, 0, 0, book.Seoul)},
+		{"10월 23일 오후 8:09", time.Date(2026, 10, 23, 20, 9, 0, 0, book.Seoul)},
 		// 연도가 없고 올해로 보면 미래가 되는 날짜는 작년 글이다.
-		{"12월 31일 오후 11:00", time.Date(2025, 12, 31, 23, 0, 0, 0, seoul)},
+		{"12월 31일 오후 11:00", time.Date(2025, 12, 31, 23, 0, 0, 0, book.Seoul)},
 	}
 	for _, tt := range tests {
 		got, err := ParseTime(tt.in, now)

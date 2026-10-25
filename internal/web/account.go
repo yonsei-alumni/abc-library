@@ -65,7 +65,7 @@ func (s *Server) requireUser(h http.HandlerFunc) http.Handler {
 		w.Header().Set("Cache-Control", "private, no-store")
 		switch {
 		case s.subjects == nil:
-			s.status(w, r, http.StatusNotFound, "찾을 수 없습니다", "로그인이 설정되지 않았습니다.")
+			s.loginUnavailable(w, r)
 		case userID(r) != 0:
 			r.Body = http.MaxBytesReader(w, r.Body, maxUserForm)
 			h(w, r)
@@ -78,10 +78,24 @@ func (s *Server) requireUser(h http.HandlerFunc) http.Handler {
 }
 
 func (s *Server) accountRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /login", s.loginPage)
-	mux.HandleFunc("POST /login", s.loginStart)
-	mux.HandleFunc("GET /auth/callback", s.loginCallback)
+	// 로그인을 설정하지 않았으면 로그인 화면과 Google의 응답을 받는 주소는 없는 것으로 다룬다.
+	login := func(pattern string, h http.HandlerFunc) {
+		mux.HandleFunc(pattern, func(w http.ResponseWriter, r *http.Request) {
+			if s.login == nil {
+				s.loginUnavailable(w, r)
+				return
+			}
+			h(w, r)
+		})
+	}
+	login("GET /login", s.loginPage)
+	login("POST /login", s.loginStart)
+	login("GET /auth/callback", s.loginCallback)
 	mux.HandleFunc("POST /logout", s.logout)
+}
+
+func (s *Server) loginUnavailable(w http.ResponseWriter, r *http.Request) {
+	s.status(w, r, http.StatusNotFound, "찾을 수 없습니다", "로그인이 설정되지 않았습니다.")
 }
 
 // safeNext는 로그인한 뒤 돌아갈 경로다. 다른 사이트로 가는 주소는 받지 않는다.
@@ -99,10 +113,6 @@ func (s *Server) adminLogin(v string) bool {
 
 // loginPage는 Google로 넘어가기 전에 무엇을 받고 저장하는지 알리는 화면이다.
 func (s *Server) loginPage(w http.ResponseWriter, r *http.Request) {
-	if s.login == nil {
-		s.status(w, r, http.StatusNotFound, "찾을 수 없습니다", "로그인이 설정되지 않았습니다.")
-		return
-	}
 	q := r.URL.Query()
 	next := safeNext(q.Get("next"))
 	admin := s.adminLogin(q.Get("admin"))
@@ -119,10 +129,6 @@ func (s *Server) loginPage(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) loginStart(w http.ResponseWriter, r *http.Request) {
-	if s.login == nil {
-		s.status(w, r, http.StatusNotFound, "찾을 수 없습니다", "로그인이 설정되지 않았습니다.")
-		return
-	}
 	admin := s.adminLogin(r.PostFormValue("admin"))
 	state := auth.NewState()
 	s.sessions.Set(w, auth.Session{State: state, Next: safeNext(r.PostFormValue("next")), AdminLogin: admin}, loginTTL)
@@ -131,10 +137,6 @@ func (s *Server) loginStart(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) loginCallback(w http.ResponseWriter, r *http.Request) {
-	if s.login == nil {
-		s.status(w, r, http.StatusNotFound, "찾을 수 없습니다", "로그인이 설정되지 않았습니다.")
-		return
-	}
 	w.Header().Set("Cache-Control", "no-store")
 	q := r.URL.Query()
 	if q.Get("error") != "" {

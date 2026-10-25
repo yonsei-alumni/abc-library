@@ -8,6 +8,15 @@ import (
 	"unicode"
 )
 
+// Seoul은 모임과 밴드의 시간대다. 밴드 화면의 시각을 읽고 화면에 날짜를 그릴 때 쓴다.
+var Seoul = func() *time.Location {
+	loc, err := time.LoadLocation("Asia/Seoul")
+	if err != nil {
+		return time.FixedZone("KST", 9*60*60)
+	}
+	return loc
+}()
+
 // Book은 책 한 권이다. 같은 작품의 판본은 하나의 Book으로 묶는다. 태그는 여러 개 붙는다.
 type Book struct {
 	ID        int64

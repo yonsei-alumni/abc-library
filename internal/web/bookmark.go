@@ -89,19 +89,15 @@ func (s *Server) saveBookmark(w http.ResponseWriter, r *http.Request) {
 	}
 	categories := formIDs(r, "category")
 	err := s.store.SetBookmark(r.Context(), userID(r), id, categories)
+	if s.failed(w, r, err) {
+		return
+	}
 	// 카테고리를 하나도 고르지 않았으면 공개 화면에 나오지 않는다는 것을 바로 알린다.
-	done := "bookmark-saved"
+	notice := "bookmark-saved"
 	if len(categories) == 0 {
-		done = "bookmark-saved-alone"
+		notice = "bookmark-saved-alone"
 	}
-	switch {
-	case errors.Is(err, store.ErrNotFound):
-		s.notFound(w, r)
-	case err != nil:
-		s.fail(w, r, err)
-	default:
-		http.Redirect(w, r, fmt.Sprintf("/books/%d?done=%s#bookmark", id, done), http.StatusSeeOther)
-	}
+	http.Redirect(w, r, fmt.Sprintf("/books/%d?done=%s#bookmark", id, notice), http.StatusSeeOther)
 }
 
 // reorderCategory는 카테고리 화면에서 끌어서 바꾼 책 순서를 저장한다. 화면의 스크립트(app.js)가 부른다.
@@ -115,15 +111,10 @@ func (s *Server) reorderCategory(w http.ResponseWriter, r *http.Request) {
 	if !s.parseForm(w, r) {
 		return
 	}
-	err := s.store.ReorderCategoryBooks(r.Context(), userID(r), id, formIDs(r, "book"))
-	switch {
-	case errors.Is(err, store.ErrNotFound):
-		s.notFound(w, r)
-	case err != nil:
-		s.fail(w, r, err)
-	default:
-		w.WriteHeader(http.StatusNoContent)
+	if s.failed(w, r, s.store.ReorderCategoryBooks(r.Context(), userID(r), id, formIDs(r, "book"))) {
+		return
 	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) deleteBookmark(w http.ResponseWriter, r *http.Request) {
@@ -173,9 +164,7 @@ func (s *Server) renderMe(w http.ResponseWriter, r *http.Request, code int, errM
 			alone++
 		}
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(code)
-	s.render(w, r, "me", "layout", map[string]any{
+	s.renderPage(w, r, code, "me", map[string]any{
 		"Title": "내 북마크", "Nav": "me", "Categories": cs, "Bookmarks": cards, "SiteURL": s.siteURL,
 		"MaxCategories": book.MaxCategories, "Error": errMsg, "Alone": alone,
 	})
@@ -244,9 +233,7 @@ func (s *Server) renderCategory(w http.ResponseWriter, r *http.Request, code int
 		s.fail(w, r, err)
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(code)
-	s.render(w, r, "category", "layout", map[string]any{
+	s.renderPage(w, r, code, "category", map[string]any{
 		"Title": stored.Title, "Nav": "me", "Stored": stored, "Form": form, "Books": books,
 		"SiteURL": s.siteURL, "Error": errMsg,
 	})
@@ -269,15 +256,10 @@ func (s *Server) saveCategory(w http.ResponseWriter, r *http.Request) {
 		s.renderCategory(w, r, http.StatusBadRequest, stored, form, err.Error()+".")
 		return
 	}
-	err = s.store.UpdateCategory(r.Context(), userID(r), c)
-	switch {
-	case errors.Is(err, store.ErrNotFound):
-		s.notFound(w, r)
-	case err != nil:
-		s.fail(w, r, err)
-	default:
-		done(w, r, fmt.Sprintf("/me/categories/%d", c.ID), "category-saved")
+	if s.failed(w, r, s.store.UpdateCategory(r.Context(), userID(r), c)) {
+		return
 	}
+	done(w, r, fmt.Sprintf("/me/categories/%d", c.ID), "category-saved")
 }
 
 // moveCategory는 내 카테고리를 한 칸 앞이나 뒤로 옮기고, 옮긴 카테고리가 보이게 돌아간다.
@@ -287,15 +269,10 @@ func (s *Server) moveCategory(w http.ResponseWriter, r *http.Request) {
 		s.notFound(w, r)
 		return
 	}
-	err := s.store.MoveCategory(r.Context(), userID(r), id, r.PostFormValue("dir") == "up")
-	switch {
-	case errors.Is(err, store.ErrNotFound):
-		s.notFound(w, r)
-	case err != nil:
-		s.fail(w, r, err)
-	default:
-		http.Redirect(w, r, fmt.Sprintf("/me#category-%d", id), http.StatusSeeOther)
+	if s.failed(w, r, s.store.MoveCategory(r.Context(), userID(r), id, r.PostFormValue("dir") == "up")) {
+		return
 	}
+	http.Redirect(w, r, fmt.Sprintf("/me#category-%d", id), http.StatusSeeOther)
 }
 
 func (s *Server) deleteCategory(w http.ResponseWriter, r *http.Request) {

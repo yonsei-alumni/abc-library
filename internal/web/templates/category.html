@@ -2,7 +2,7 @@
 <div class="admin me" hx-boost="false">
 <p class="breadcrumb"><a href="/me">← 내 북마크</a></p>
 <h1 class="page-title">{{.Stored.Title}}</h1>
-{{template "admin-notice" .}}
+{{template "notice" .}}
 
 <section class="admin-section">
   <form class="admin-form" method="post" action="/me/categories/{{.Stored.ID}}">

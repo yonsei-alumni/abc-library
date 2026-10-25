@@ -2,6 +2,7 @@ package book
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"unicode"
@@ -17,6 +18,11 @@ const (
 	// KindTag는 소설, 인문, 역사 같은 책의 갈래다.
 	KindTag TagKind = "kind"
 )
+
+// Valid는 정해진 갈래(모임 주제나 책의 갈래)인지 알려 준다.
+func (k TagKind) Valid() bool {
+	return k == TopicTag || k == KindTag
+}
 
 // Tag는 책에 붙일 수 있는 태그다. 태그 목록은 DB의 tags 테이블에 있고 관리 화면에서 고친다.
 type Tag struct {
@@ -77,7 +83,7 @@ func CleanTagName(s string) (string, error) {
 	case s == "":
 		return "", errors.New("태그 이름을 입력해 주세요")
 	case utf8.RuneCountInString(s) > maxTagName:
-		return "", errors.New("태그 이름은 20자까지 쓸 수 있습니다")
+		return "", fmt.Errorf("태그 이름은 %d자까지 쓸 수 있습니다", maxTagName)
 	case strings.ContainsFunc(s, func(r rune) bool { return r == '#' || r == ',' || unicode.IsControl(r) }):
 		return "", errors.New("태그 이름에는 #, 쉼표, 제어 문자를 쓸 수 없습니다")
 	}

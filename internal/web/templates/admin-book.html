@@ -2,7 +2,7 @@
 <div class="admin" hx-boost="false">
 <p class="breadcrumb"><a href="/books/{{.Stored.ID}}">← {{.Stored.Title}}</a></p>
 <h1 class="page-title">책 편집 <span class="muted">{{.Stored.ID}}번</span></h1>
-{{template "admin-notice" .}}
+{{template "notice" .}}
 {{with .Form.DupID}}<p class="notice notice-error"><a href="/books/{{.}}">{{.}}번 책 보기</a></p>{{end}}
 
 <section class="admin-section">

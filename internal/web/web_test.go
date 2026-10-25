@@ -22,7 +22,7 @@ var (
 	story = book.Book{ID: 1, ISBN13: "9791196914806", Title: "당신 인생의 이야기", Authors: []string{"테드 창"},
 		Publisher: "엘리", KyoboPID: "S000001981838", Tags: []string{"SF", "소설"}}
 	noIsbn = book.Book{ID: 2, Title: "무수면 사회", Authors: []string{"김찬호"}}
-	posted = time.Date(2026, 10, 21, 1, 24, 0, 0, seoul)
+	posted = time.Date(2026, 10, 21, 1, 24, 0, 0, book.Seoul)
 )
 
 // defaultTags는 fakeStore의 태그 목록이다.
@@ -320,7 +320,7 @@ func TestTagsPutsTopicsFirst(t *testing.T) {
 }
 
 func TestNotFoundAndErrors(t *testing.T) {
-	for _, path := range []string{"/books/99", "/books/abc", "/nothing"} {
+	for _, path := range []string{"/books/99", "/books/abc", "/books/0", "/books/-1", "/nothing"} {
 		if code, _ := get(t, &fakeStore{}, path); code != http.StatusNotFound {
 			t.Errorf("%s: code = %d", path, code)
 		}

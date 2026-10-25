@@ -95,6 +95,14 @@ func TestCleanTagName(t *testing.T) {
 	}
 }
 
+func TestTagKindValid(t *testing.T) {
+	for k, want := range map[TagKind]bool{TopicTag: true, KindTag: true, "": false, "Topic": false, "genre": false} {
+		if got := k.Valid(); got != want {
+			t.Errorf("TagKind(%q).Valid() = %v", k, got)
+		}
+	}
+}
+
 func TestCleanISBN(t *testing.T) {
 	if got := CleanISBN(" 979-11-969148-0-6 "); got != "9791196914806" {
 		t.Errorf("CleanISBN = %q", got)
