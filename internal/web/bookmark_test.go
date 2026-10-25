@@ -465,6 +465,11 @@ func TestSharedCategory(t *testing.T) {
 	}
 	assertContains(t, body, "<title>함께 읽을 SF · ABC 도서관</title>", "<strong>굵게</strong><br>", "책 2권",
 		`href="/books/1"`, `href="/books/2"`, `<a href="https://example.com/a" target="_blank" rel="noopener nofollow ugc">좋은 링크</a>`)
+	// 카카오톡 링크 미리보기는 공개용 제목, 본문의 글자, 첫 책의 표지, 공개 주소를 쓴다.
+	assertContains(t, body, `<meta property="og:title" content="함께 읽을 SF">`,
+		`<meta property="og:description" content="굵게 둘째 줄 나쁜 링크 좋은 링크">`,
+		`<meta property="og:url" content="https://abc-lib.web.app/shared/sfq">`,
+		`<meta property="og:image" content="https://contents.kyobobook.co.kr/sih/fit-in/458x0/pdt/9791196914806.jpg">`)
 	// 새 책 안내는 만든 사람의 카테고리 화면에만 둔다.
 	for _, bad := range []string{"<script>alert", "javascript:", "나만 보는 제목", "편집</a>", "밴드에서 책에 대한 글을 써주세요"} {
 		if strings.Contains(body, bad) {
@@ -492,6 +497,36 @@ func TestSharedCategory(t *testing.T) {
 		if rec := a.get(path); rec.Code != http.StatusNotFound {
 			t.Errorf("%s: code = %d", path, rec.Code)
 		}
+	}
+}
+
+func TestSharedPreview(t *testing.T) {
+	const site = "https://abc-lib.web.app"
+	cosmos := book.Book{ISBN13: "9791124336083", Title: "코스모스"}
+	tests := []struct {
+		name        string
+		body        string
+		books       []book.Book
+		description string
+		image       string
+	}{
+		{"본문이 있으면 본문의 글자", "# 겨울에 읽을 책\n- [첫 권](https://example.com)", []book.Book{story},
+			"겨울에 읽을 책 첫 권", "https://contents.kyobobook.co.kr/sih/fit-in/458x0/pdt/9791196914806.jpg"},
+		{"본문이 없으면 책 제목", "", []book.Book{noIsbn, cosmos},
+			"책 2권: 무수면 사회, 코스모스", "https://contents.kyobobook.co.kr/sih/fit-in/458x0/pdt/9791124336083.jpg"},
+		{"제목은 세 권까지", "  ", []book.Book{story, noIsbn, cosmos, story},
+			"책 4권: 당신 인생의 이야기, 무수면 사회, 코스모스 등", "https://contents.kyobobook.co.kr/sih/fit-in/458x0/pdt/9791196914806.jpg"},
+		{"표지가 없으면 앱 아이콘", "<p>원시 HTML만</p>", []book.Book{noIsbn},
+			"책 1권: 무수면 사회", site + "/static/icon-512.png"},
+		{"책도 본문도 없음", "", nil, "아카라카북클럽(ABC) 회원이 공개한 북마크입니다.", site + "/static/icon-512.png"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			description, image := sharedPreview(book.Category{Body: tt.body}, tt.books, site)
+			if description != tt.description || image != tt.image {
+				t.Errorf("got %q %q", description, image)
+			}
+		})
 	}
 }
 

@@ -1,3 +1,15 @@
+{{/* 카카오톡 같은 메신저의 링크 미리보기. 카카오는 og:url의 주소를 다시 읽으므로 공개 주소와 같게 둔다. */}}
+{{define "head"}}
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="ABC 도서관">
+<meta property="og:locale" content="ko_KR">
+<meta property="og:title" content="{{.Category.ShownTitle}}">
+<meta property="og:description" content="{{.Description}}">
+<meta property="og:url" content="{{.SiteURL}}/shared/{{.Category.Code}}">
+<meta property="og:image" content="{{.Image}}">
+<meta name="twitter:card" content="summary">
+{{end}}
+
 {{define "content"}}
 <article class="shared">
   <h1 class="page-title">{{.Category.ShownTitle}}</h1>

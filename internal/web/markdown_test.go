@@ -39,3 +39,16 @@ func TestMarkdownDropsUnsafeContent(t *testing.T) {
 		}
 	}
 }
+
+func TestMarkdownText(t *testing.T) {
+	for in, want := range map[string]string{
+		"": "",
+		"# 제목\n첫 줄\n둘째 줄\n\n- 목록":                                  "제목 첫 줄 둘째 줄 목록",
+		"**굵게** [링크](https://example.com/a) https://example.com/b": "굵게 링크 https://example.com/b",
+		"<script>alert(1)</script>\n\n`코드` 뒤\n\n```\nfenced\n```":  "뒤",
+	} {
+		if got := markdownText(in); got != want {
+			t.Errorf("markdownText(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

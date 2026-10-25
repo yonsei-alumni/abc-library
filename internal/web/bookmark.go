@@ -338,9 +338,41 @@ func (s *Server) shared(w http.ResponseWriter, r *http.Request) {
 		s.sharedNotFound(w, r)
 		return
 	}
+	description, image := sharedPreview(c, books, s.siteURL)
 	s.render(w, r, "shared", "layout", map[string]any{
 		"Title": c.ShownTitle(), "Nav": "shared", "Category": c, "Books": books, "Owner": owner,
+		"SiteURL": s.siteURL, "Description": description, "Image": image,
 	})
+}
+
+// previewTitles는 링크 미리보기 설명에 제목을 적을 책 수다.
+const previewTitles = 3
+
+// sharedPreview는 카카오톡 같은 메신저가 공개 주소의 링크 미리보기에 쓸 설명과 그림 주소다.
+// 설명은 본문의 앞부분을, 본문이 없으면 책 제목을 쓴다. 그림은 표지가 있는 첫 책의 표지를, 없으면 앱 아이콘을 쓴다.
+func sharedPreview(c book.Category, books []book.Book, siteURL string) (description, image string) {
+	description = excerpt(markdownText(c.Body))
+	if description == "" && len(books) > 0 {
+		titles := make([]string, 0, previewTitles)
+		for _, b := range books[:min(len(books), previewTitles)] {
+			titles = append(titles, b.Title)
+		}
+		description = fmt.Sprintf("책 %d권: %s", len(books), strings.Join(titles, ", "))
+		if len(books) > previewTitles {
+			description += " 등"
+		}
+	}
+	if description == "" {
+		description = "아카라카북클럽(ABC) 회원이 공개한 북마크입니다."
+	}
+	image = siteURL + "/static/icon-512.png"
+	for _, b := range books {
+		if src := coverURL(b, 458); src != "" {
+			image = src
+			break
+		}
+	}
+	return description, image
 }
 
 func (s *Server) sharedNotFound(w http.ResponseWriter, r *http.Request) {

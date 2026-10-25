@@ -3,6 +3,7 @@ package web
 import (
 	"bytes"
 	"html/template"
+	"strings"
 
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/ast"
@@ -46,4 +47,30 @@ func markdown(s string) template.HTML {
 		return template.HTML(template.HTMLEscapeString(s))
 	}
 	return template.HTML(buf.String())
+}
+
+// markdownText는 Markdown에서 글자만 뽑아 한 줄로 잇는다. 링크는 글자만 남기고, 원시 HTML과 코드는 뺀다.
+// 공개 주소의 링크 미리보기 설명에 쓴다.
+func markdownText(s string) string {
+	src := []byte(s)
+	var b strings.Builder
+	_ = ast.Walk(md.Parser().Parse(text.NewReader(src)), func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+		switch n := n.(type) {
+		case *ast.CodeBlock, *ast.FencedCodeBlock, *ast.HTMLBlock, *ast.RawHTML, *ast.CodeSpan:
+			return ast.WalkSkipChildren, nil
+		case *ast.Text:
+			b.Write(n.Segment.Value(src))
+			b.WriteByte(' ')
+		case *ast.AutoLink:
+			b.Write(n.Label(src))
+			b.WriteByte(' ')
+		case *ast.String:
+			b.Write(n.Value)
+		}
+		return ast.WalkContinue, nil
+	})
+	return strings.Join(strings.Fields(b.String()), " ")
 }
