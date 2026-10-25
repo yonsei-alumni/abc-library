@@ -207,6 +207,21 @@ func assertContains(t *testing.T, body string, wants ...string) {
 	}
 }
 
+// assertInMenu는 wants가 '메뉴' 패널 안에 있는지 확인한다. 바닥글에 두면 무한 스크롤 화면에서 닿지 않는다.
+func assertInMenu(t *testing.T, body string, wants ...string) {
+	t.Helper()
+	_, menu, ok := strings.Cut(body, `id="site-menu" popover`)
+	menu, _, _ = strings.Cut(menu, "<main")
+	if !ok || !strings.Contains(body, `popovertarget="site-menu"`) {
+		t.Fatal("'메뉴' 패널과 여는 버튼이 없다")
+	}
+	for _, w := range wants {
+		if !strings.Contains(menu, w) {
+			t.Errorf("'메뉴' 패널에 %q가 없다", w)
+		}
+	}
+}
+
 func TestTimelinePagesWithHTMX(t *testing.T) {
 	st := &fakeStore{entries: pageSize + 3}
 	code, body := get(t, st, "/")
@@ -400,12 +415,14 @@ func TestHelpPage(t *testing.T) {
 	if code != http.StatusOK {
 		t.Fatalf("code = %d", code)
 	}
+	// 화면만 봐서는 알기 어려운 규칙과 설치 방법만 남긴다.
 	assertContains(t, body, "<title>도움말 · ABC 도서관</title>", `<a href="/help" aria-current="page">도움말</a>`,
+		"띄어쓰기와 대소문자를 가리지 않습니다", "밴드 멤버만", "카테고리 없음", "다음 날 아침",
 		"설치 및 바로가기 만들기", "홈 화면에 추가", "웹 앱으로 열기", "/privacy")
-	// 캡처는 밝은 화면과 어두운 화면을 짝으로 두고, 적어 둔 그림 파일이 모두 있어야 한다.
+	// 캡처는 로그인하지 않은 사람이 볼 수 없는 내 북마크 화면만 밝은 화면과 어두운 화면 한 쌍으로 둔다.
 	shots := regexp.MustCompile(`/static/help/[a-z-]+\.webp\?v=[0-9a-f]{8}`).FindAllString(body, -1)
-	if len(shots) != 8 {
-		t.Errorf("도움말 캡처 수 = %d", len(shots))
+	if len(shots) != 2 || !strings.Contains(shots[0], "/bookmark-dark.webp") || !strings.Contains(shots[1], "/bookmark.webp") {
+		t.Errorf("도움말 캡처 = %v", shots)
 	}
 	s := newServer(t, &fakeStore{})
 	for _, shot := range shots {

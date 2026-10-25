@@ -1,7 +1,8 @@
 {{define "content"}}
 <div class="feed">
 <h1 class="page-title">최근 소식</h1>
-<p class="feed-lead">밴드에서 나눈 책 이야기를 하루 한 번 모읍니다. 처음이라면 <a href="/help">도움말</a>을 보세요.</p>
+{{/* 처음 온 사람을 위한 안내라서 로그인한 사람에게는 보이지 않는다. */}}
+{{if not (or .User .Admin)}}<p class="feed-lead">밴드에서 나눈 책 이야기를 하루 한 번 모읍니다. 처음이라면 <a href="/help">도움말</a>을 보세요.</p>{{end}}
 {{if .Entries}}
 <ol class="timeline">
 {{template "timeline-items" .}}

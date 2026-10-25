@@ -1,114 +1,59 @@
 {{define "content"}}
 <article class="help">
 <h1 class="page-title">도움말</h1>
-<p class="help-lead">ABC 도서관은 아카라카북클럽(ABC) 밴드에서 회원들이 나눈 책 이야기를 모아 둔 곳입니다.
-  매일 새벽 3시에 밴드의 새 글과 댓글을 읽고, AI가 그 글에 나온 책을 찾아 이름이나 연락처 같은 개인 정보를 뺀 요약을 씁니다.</p>
+<p class="help-lead">ABC 도서관은 아카라카북클럽(ABC) 밴드에서 나눈 책 이야기를 모은 곳입니다.
+  매일 새벽 3시에 밴드의 새 글과 댓글을 읽고, AI가 이름이나 연락처 같은 개인 정보를 뺀 요약을 씁니다.</p>
 <ul class="help-toc" aria-label="도움말 목차">
-  <li><a href="#feed">최근 소식</a></li>
-  <li><a href="#find">책 찾기</a></li>
-  <li><a href="#book">책 화면</a></li>
+  <li><a href="#read">소식과 책</a></li>
   <li><a href="#bookmark">북마크</a></li>
   <li><a href="#add">새 책 올리기</a></li>
   <li><a href="#install">휴대폰에 설치</a></li>
 </ul>
 
-<section class="help-section" id="feed">
+<section class="help-section" id="read">
   <div class="help-text">
-    <h2>최근 소식</h2>
-    <p>첫 화면에는 책 이야기가 나온 밴드 글이 최근 것부터 위에서 아래로 나옵니다. 소식 하나는 밴드 글 하나에서 책 한 권을 이야기한 내용입니다.
-      한 글에서 책 두 권을 이야기했으면 소식도 두 개가 됩니다.</p>
+    <h2>소식과 책</h2>
     <ul>
       <li><span class="help-icon avatar-new">{{template "icon-new"}}</span> <b>새 책</b>은 이 사이트에 처음 올라온 책입니다.</li>
       <li><span class="help-icon">{{template "icon-talk"}}</span> <b>이야기 추가</b>는 이미 있는 책이 다른 글이나 댓글에서 다시 나온 것입니다.</li>
-      <li>소식 맨 아래의 <b>댓글 2개</b>는 그 글에 달린 댓글 가운데 이 책을 이야기한 댓글 수이고, <b>이 책의 이야기 5개</b>는 지금까지 이 책을 이야기한 본문과 댓글을 모두 센 수입니다.</li>
-    </ul>
-    <p>소식을 누르면 그 책의 화면이 열리면서 그 글의 이야기 상자까지 저절로 내려갑니다. 상자 배경은 2초쯤 <span class="help-mark">노란색</span>으로 칠해졌다가 원래 색으로 돌아오고, 테두리는 파란색으로 남습니다.</p>
-    <p>화면 맨 아래까지 내리면 그 전 소식 24개를 더 불러옵니다.</p>
-  </div>
-  <figure class="shot">
-    <picture>
-      <source srcset="{{static "help/feed-dark.webp"}}" media="(prefers-color-scheme: dark)">
-      <img src="{{static "help/feed.webp"}}" width="390" height="760" loading="lazy"
-        alt="최근 소식 화면. 위에는 검색창과 소식, 책, 태그, 저자 메뉴가 있고, 그 아래 소식마다 종류와 시각, 이야기 요약, 책 표지와 제목, 댓글 수가 있다.">
-    </picture>
-  </figure>
-</section>
-
-<section class="help-section" id="find">
-  <div class="help-text">
-    <h2>책 찾기</h2>
-    <p>어느 화면에서나 위쪽 검색창에 제목, 저자, 태그를 입력하면 입력하는 동안 아래 결과가 바뀝니다. 띄어쓰기와 대소문자는 가리지 않아서 <b>sf</b>를 입력해도 SF 태그가 붙은 책이 나옵니다.</p>
-    <ul>
-      <li><b>책</b>: 가장 최근에 이야기한 책의 표지가 맨 왼쪽 위에 오고, 오른쪽으로 갔다가 다음 줄로 이어집니다. 휴대폰에서는 한 줄에 세 권씩 나옵니다. 표지 아래에는 제목, 저자, 그 책을 이야기한 게시글 수, 마지막으로 이야기한 때가 있습니다.</li>
-      <li><b>태그</b>: 맨 위에 모임 주제 태그(AI, SF, 과학 같은)가 파란 바탕으로 있고, 그 아래에 소설이나 인문 같은 책의 갈래 태그가 책이 많은 것부터 있습니다. 태그 옆 숫자는 그 태그가 붙은 책 수이고, 태그를 누르면 그 태그가 붙은 책만 나옵니다.</li>
-      <li><b>저자</b>: 저자 이름 옆에 그 저자의 책 수가 있습니다. 이름을 누르면 그 저자의 책만 나옵니다.</li>
-    </ul>
-    <p>교보문고에 표지 그림이 없는 책은 파란 바탕에 제목만 쓴 표지로 나옵니다.</p>
-  </div>
-  <figure class="shot">
-    <picture>
-      <source srcset="{{static "help/find-dark.webp"}}" media="(prefers-color-scheme: dark)">
-      <img src="{{static "help/find.webp"}}" width="390" height="760" loading="lazy"
-        alt="검색창에 소문자로 sf를 적은 화면. SF 태그가 붙은 책 표지가 격자로 나오고, 표지 아래에 제목, 저자, 게시글 수, 마지막으로 이야기한 때가 있다.">
-    </picture>
-  </figure>
-</section>
-
-<section class="help-section" id="book">
-  <div class="help-text">
-    <h2>책 화면</h2>
-    <p>위쪽에 표지, 제목, 저자, 출판사, 태그가 있고 <b>교보문고에서 보기</b>로 책을 살 수 있는 교보문고 페이지를 엽니다.</p>
-    <p>아래쪽 <b>이야기</b>에서는 밴드 글 하나가 상자 하나에 들어 있고, 오래된 글의 상자가 위에 옵니다. 상자 맨 위에는 게시글 본문의 요약이 있고,
-      그 아래에 같은 글의 댓글 요약이 왼쪽 세로줄을 따라 한 칸 들여서 차례로 나옵니다. 댓글에서만 이 책을 이야기한 글은 상자에 댓글 요약만 있습니다.</p>
-    <ul>
-      <li>요약은 AI가 개인 정보를 빼고 쓴 것이라 원문과 작성자 이름은 보이지 않습니다.</li>
-      <li>글에 있던 기사나 영상 링크는 그 요약 바로 아래에 목록으로 나옵니다.</li>
+      <li>검색은 제목, 저자, 태그에서 찾고 띄어쓰기와 대소문자를 가리지 않습니다.</li>
+      <li>파란 바탕의 태그는 모임 주제입니다.</li>
       <li><b>밴드에서 원문 보기</b>는 밴드 멤버만 열 수 있습니다.</li>
     </ul>
   </div>
-  <figure class="shot">
-    <picture>
-      <source srcset="{{static "help/book-dark.webp"}}" media="(prefers-color-scheme: dark)">
-      <img src="{{static "help/book.webp"}}" width="390" height="760" loading="lazy"
-        alt="넥서스 책 화면. 표지, 제목, 저자, 태그, 교보문고에서 보기 단추 아래에 이야기 상자가 있다. 상자 안에는 게시글 요약 아래에 댓글 요약 두 개가 왼쪽 세로줄을 따라 들여 쓰여 있고, 소식에서 눌러 와서 상자 배경이 노란색이다.">
-    </picture>
-  </figure>
 </section>
 
-<section class="help-section" id="bookmark">
+<section class="help-section with-shot" id="bookmark">
   <div class="help-text">
     <h2>북마크</h2>
-    <p>위쪽 메뉴의 <b>로그인</b>을 누르고 Google 계정으로 들어오면 관심 있는 책을 북마크할 수 있습니다. 이 사이트는 이름, 메일 주소, 프로필 사진을 받지 않습니다.</p>
-    <ol>
-      <li>책 화면의 <b>북마크</b>에서 넣을 카테고리를 고르고 <b>북마크하기</b>를 누릅니다. 북마크한 책은 제목 아래에 <b>★ 북마크함</b>과 넣은 카테고리가 보입니다.</li>
-      <li><b>내 북마크</b>에서 카테고리를 만듭니다. 내 북마크에는 최근에 북마크한 책이 먼저 나오고, 카테고리 목록의 순서는 <b>↑↓</b>로 바꿉니다.</li>
-      <li>카테고리 제목을 누르면 나오는 카테고리 화면에서 표지 왼쪽 위의 <b>⠿</b>를 끌어 그 카테고리 안의 책 순서를 바꿉니다. 이 순서는 그 카테고리에만 쓰이고, 공개 화면도 이 순서로 나옵니다.</li>
-      <li>카테고리를 <b>공개</b>하면 <code>/shared/abc</code> 같은 짧은 주소가 생기고, 위쪽 메뉴의 <b>공개 북마크</b> 목록에도 나옵니다. 카테고리 화면의 본문에는 나에게 남기는 메모나 공개할 때 보여 줄 설명을 Markdown으로 적을 수 있고, 비워 두어도 됩니다.</li>
-      <li>공개 주소를 카카오톡으로 보내면 미리보기에 공개용 제목, 본문 앞부분(본문이 없으면 책 제목), 첫 책의 표지가 나옵니다.</li>
-    </ol>
-    <p>내 북마크에는 북마크한 책이 모두 나오지만, 공개 주소에는 그 카테고리에 넣은 책만 나옵니다. 그래서 내 북마크에는 6권인데 공개 화면에는 5권일 수 있습니다.
-      북마크할 때 카테고리를 하나도 고르지 않은 책은 내 북마크의 표지 아래에 빨간 글씨로 <b>카테고리 없음</b>이라고 나옵니다.
-      그 책을 눌러 북마크에서 카테고리를 고르고 <b>저장</b>을 누르면 공개 화면에도 나옵니다.</p>
-    <p>내 북마크 아래쪽의 <b>계정 지우기</b>를 누르면 북마크와 카테고리가 모두 지워집니다.</p>
+    <p><b>메뉴</b>에서 Google 계정으로 로그인하면 책을 북마크할 수 있습니다. 이름, 메일 주소, 프로필 사진은 받지 않습니다.</p>
+    <ul>
+      <li>북마크한 책을 카테고리로 묶습니다. 카테고리 안의 책 순서는 표지의 <b>⠿</b>를 끌어서 바꿉니다.</li>
+      <li>카테고리를 <b>공개</b>하면 <code>/shared/abc</code> 같은 짧은 주소가 생기고 <b>공개 북마크</b>에 실립니다.</li>
+      <li>공개 화면에는 그 카테고리에 넣은 책만 나옵니다. 카테고리를 고르지 않은 책은 내 북마크에 <b>카테고리 없음</b>으로 표시됩니다.</li>
+      <li>내 북마크 맨 아래의 <b>계정 지우기</b>를 누르면 북마크와 카테고리가 모두 지워집니다.</li>
+    </ul>
   </div>
+  {{/* 로그인하지 않은 사람은 내 북마크를 볼 수 없으므로 이 화면만 캡처로 보인다. */}}
   <figure class="shot">
     <picture>
       <source srcset="{{static "help/bookmark-dark.webp"}}" media="(prefers-color-scheme: dark)">
       <img src="{{static "help/bookmark.webp"}}" width="390" height="1000" loading="lazy"
-        alt="내 북마크 화면. 카테고리 세 개가 공개와 비공개 표시와 함께 있고, 그 아래 북마크 8권 위에 카테고리에 넣지 않은 책이 2권 있다는 안내가 있다. 최근에 북마크한 책이 먼저 나온다는 안내 아래 표지가 있고, 넥서스의 표지 아래에는 빨간 글씨로 카테고리 없음이라고 쓰여 있다.">
+        alt="내 북마크 화면. 카테고리 세 개가 공개와 비공개 표시와 함께 있고, 그 아래 북마크 8권 위에 카테고리에 넣지 않은 책이 2권 있다는 안내가 있다. 최근에 북마크한 책이 먼저 나온다는 안내 아래 표지가 있고, 혼모노의 표지 아래에는 빨간 글씨로 카테고리 없음이라고 쓰여 있다.">
     </picture>
+    <figcaption>내 북마크 화면</figcaption>
   </figure>
 </section>
 
-<section class="help-section wide" id="add">
+<section class="help-section" id="add">
   <div class="help-text">
     <h2>새 책 올리기</h2>
-    <p>이 사이트에 없는 책을 올리고 싶다면 밴드에 그 책 이야기를 써 주세요. 매일 새벽 3시에 그때까지 올라온 새 글과 댓글을 읽어서 책과 요약을 올리므로, 글을 쓴 다음 날 아침이면 사이트에 나옵니다. 댓글로 소개한 책도 올라갑니다.</p>
-    <p>잘못 올라온 책이나 고쳐야 할 요약이 있으면 운영자에게 알려 주세요. 연락처는 <a href="/privacy">개인정보 처리방침</a>에 있습니다.</p>
+    <p>사이트에 없는 책은 밴드에 그 책 이야기를 쓰면 다음 날 아침에 올라옵니다. 댓글로 소개한 책도 올라갑니다.</p>
+    <p>잘못 올라온 책이나 고칠 요약은 운영자에게 알려 주세요. 연락처는 <a href="/privacy">개인정보 처리방침</a>에 있습니다.</p>
   </div>
 </section>
 
-<section class="help-section wide" id="install">
+<section class="help-section" id="install">
   <div class="help-text">
     <h2>휴대폰에 앱처럼 설치하기</h2>
     <p>ABC 도서관은 앱 스토어 없이 휴대폰 홈 화면에 설치할 수 있습니다. 설치하면 주소창 없는 전체 화면으로 열리고, 한 번 열어 본 화면은 인터넷이 끊겨도 볼 수 있습니다.</p>

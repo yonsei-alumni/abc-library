@@ -251,6 +251,11 @@ func TestAdminPagesNeedAdmin(t *testing.T) {
 	// 로그인하지 않은 방문자에게는 로그인 링크만 보인다.
 	body := a.get("/").Body.String()
 	assertContains(t, body, `href="/login?admin=1&next=%2f"`, "관리자 로그인", `href="/login?next=%2f"`, "로그인")
+	assertInMenu(t, body, `href="/login?admin=1&amp;next=%2f"`, `href="/login?next=%2f"`)
+	assertContains(t, body, "처음이라면")
+	if strings.Contains(a.get("/", a.admin()).Body.String(), "처음이라면") {
+		t.Error("로그인한 관리자에게는 소식 안내를 보이지 않아야 한다")
+	}
 	if strings.Contains(body, `href="/admin/tags"`) {
 		t.Error("관리 메뉴는 관리자에게만 보여야 한다")
 	}

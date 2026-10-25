@@ -212,6 +212,11 @@ func TestUserLoginStoresOnlySubjectHash(t *testing.T) {
 	rec = a.get("/books/1", session)
 	body = rec.Body.String()
 	assertContains(t, body, `href="/me"`, "내 북마크", "북마크하기", "로그인함", "로그아웃")
+	assertInMenu(t, body, `action="/logout"`)
+	// 처음 온 사람을 위한 소식 안내는 로그인한 사용자에게 보이지 않는다.
+	if home := a.get("/", session).Body.String(); strings.Contains(home, "처음이라면") {
+		t.Error("로그인한 사용자에게는 소식 안내를 보이지 않아야 한다")
+	}
 	for _, leak := range []string{"member@example.com", memberSub, `href="/admin/tags"`} {
 		if strings.Contains(body, leak) {
 			t.Errorf("사용자 화면에 %q가 있으면 안 된다", leak)
@@ -600,7 +605,13 @@ func TestPublicCategoryList(t *testing.T) {
 		if rec.Code != http.StatusOK {
 			t.Fatalf("code = %d", rec.Code)
 		}
-		assertContains(t, body, `<a href="/shared" aria-current="page">공개 북마크</a>`, `href="/shared/sfq">함께 읽을 SF</a>`, "책 3권", `href="/shared/oth">다른 회원의 목록</a>`)
+		assertContains(t, body, `href="/shared/sfq">함께 읽을 SF</a>`, "책 3권", `href="/shared/oth">다른 회원의 목록</a>`)
+		// 공개 북마크는 다른 회원의 카테고리를 둘러보는 곳이라서 '메뉴' 패널이 아니라 주 메뉴에 있다.
+		_, nav, _ := strings.Cut(body, `aria-label="주 메뉴"`)
+		nav, _, _ = strings.Cut(nav, "</nav>")
+		if !strings.Contains(nav, `<a href="/shared" aria-current="page">`) || !strings.Contains(nav, "<span>공개 북마크</span>") {
+			t.Error("주 메뉴에 지금 화면인 공개 북마크가 있어야 한다")
+		}
 		for _, bad := range []string{"비공개 목록", "/shared/prv", "나만 보는 제목"} {
 			if strings.Contains(body, bad) {
 				t.Errorf("공개 목록에 %q가 있으면 안 된다", bad)
