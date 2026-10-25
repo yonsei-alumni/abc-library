@@ -92,6 +92,7 @@
 
 - Google Cloud 프로젝트 이름, 리전, 서비스 계정, 비밀 이름은 `scripts/gcp-env.sh`에만 둔다. 절차는 `docs/spec.md`의 '배포'를 따른다.
 - 운영 배포는 `release` 브랜치에 merge할 때만 한다. GitHub Actions(`.github/workflows/ci.yml`)가 `release`에 push되면 `make ci`를 통과한 뒤 웹과 배치를 배포한다. `main`에 push하면 검사만 한다.
+- 웹과 배치는 배포된 이미지의 커밋 이후 각자에 들어가는 파일이 바뀌었을 때만 배포한다(`scripts/deploy.sh --if-changed`). 무엇이 들어가는지는 `go list -deps`로 계산하므로 목록을 따로 두지 않는다.
 - 배치 이미지에는 전체 Chromium 없이 headless shell만 넣는다. 배치에서 브라우저 설치를 확인할 때는 `band.InstallHeadlessBrowser`를 쓴다.
 
 ## 테스트

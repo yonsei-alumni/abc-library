@@ -206,7 +206,8 @@ make firebase-hosting           # https://abc-lib.web.app을 웹 서비스에 �
 
 `make firebase-hosting` 전에 Firebase 콘솔에서 이 프로젝트에 Firebase를 한 번 추가해야 한다(약관 동의와 Blaze 요금제 확인). Firebase 프로젝트를 지우면 GCP 프로젝트 전체가 지워지므로 지우지 않는다.
 
-그 뒤에는 `release` 브랜치에 merge하면 GitHub Actions가 배포한다. `main`에 push하면 린트와 테스트만 돌리고 배포하지 않는다. 환경 변수와 비밀 값 연결은 서비스와 Job에 남아 있어서 워크플로는 이미지만 바꾼다.
+그 뒤에는 `release` 브랜치에 merge하면 GitHub Actions가 배포한다. `main`에 push하면 린트와 테스트만 돌리고 배포하지 않는다.
+웹과 배치는 따로 판단해서, 배포된 이미지의 커밋(이미지 태그) 이후 그 대상에 들어가는 파일이 바뀌었을 때만 배포한다. 대상 바이너리가 쓰는 패키지(`go list -deps`)와 `go.mod`, `go.sum`, `Dockerfile.<대상>`, `.dockerignore`, `scripts/deploy.sh`, `scripts/gcp-env.sh`를 보고, 테스트와 문서는 빼고 본다. 웹은 `internal/band`와 `internal/kyobo`도 쓰므로 이 패키지가 바뀌면 함께 배포된다. GitHub Actions에서 워크플로를 직접 실행하면 둘 다 배포한다. 환경 변수와 비밀 값 연결은 서비스와 Job에 남아 있어서 워크플로는 이미지만 바꾼다.
 
 ```bash
 git push origin main:release    # main을 release로 fast-forward해서 배포(GitHub에서 main → release PR을 merge해도 된다)

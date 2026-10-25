@@ -2,6 +2,7 @@ name: CI
 
 # push마다 make ci(린트와 단위 테스트)를 실행한다.
 # release에 merge(push)하면 테스트가 통과한 뒤 웹 서버와 배치 이미지를 빌드해서 Cloud Run에 배포한다.
+# 웹과 배치는 배포된 커밋 이후 각자에 들어가는 파일이 바뀌었을 때만 배포한다. 직접 실행(workflow_dispatch)하면 둘 다 배포한다.
 # main에 push하면 검사만 하고 배포하지 않는다.
 # 문서(.md 파일과 docs/)만 바뀌었으면 검사도 배포도 하지 않는다.
 on:
@@ -53,10 +54,16 @@ jobs:
       id-token: write # Workload Identity Federation으로 OIDC 토큰을 받는 데 필요하다.
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # 배포된 이미지의 커밋과 비교하려면 이력이 있어야 한다.
+      # 대상 바이너리가 쓰는 패키지를 go list로 찾는다.
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
       - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ env.WIF_PROVIDER }}
           service_account: ${{ env.DEPLOY_SA }}
       - uses: google-github-actions/setup-gcloud@v2
       # 환경 변수(DB_URL 등)와 비밀 값 연결은 서비스와 Job에 남아 있어서 여기서는 넘기지 않는다.
-      - run: scripts/deploy.sh ${{ matrix.target }}
+      - run: scripts/deploy.sh ${{ matrix.target }} ${{ github.event_name == 'push' && '--if-changed' || '' }}

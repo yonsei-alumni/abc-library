@@ -19,7 +19,7 @@
 | 네이버 밴드 | 정보의 원천이다. 비공개 밴드라서 사람이 한 번 로그인해 둔 세션으로 화면을 읽기만 한다. 글쓰기, 댓글 같은 쓰기 동작은 하지 않는다. |
 | Claude API | 글을 해석해서 책 정보를 찾는다. 자세한 내용은 아래 'AI가 하는 일'에 있다. |
 | 교보문고 | 책을 검색해서 판본과 ISBN을 확정한다. 화면의 표지 이미지와 구매 링크도 교보문고로 통일한다. |
-| GitHub Actions | push마다 린트와 테스트(`make ci`)를 돌리고, `release` 브랜치에 merge하면 이미지를 빌드해서 배포한다. 서비스 계정 키 없이 Workload Identity Federation으로 GCP에 인증한다. |
+| GitHub Actions | push마다 린트와 테스트(`make ci`)를 돌리고, `release` 브랜치에 merge하면 웹과 배치 중 바뀐 쪽만 이미지를 빌드해서 배포한다. 서비스 계정 키 없이 Workload Identity Federation으로 GCP에 인증한다. |
 
 ## 흐름
 

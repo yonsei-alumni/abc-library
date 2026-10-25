@@ -3,6 +3,7 @@
 #
 #   scripts/deploy.sh web     웹 서버(Cloud Run 서비스)
 #   scripts/deploy.sh batch   일일 배치(Cloud Run Job)
+#   scripts/deploy.sh web --if-changed   배포된 이미지의 커밋 이후 웹에 들어가는 파일이 바뀌었을 때만 배포한다
 #
 # 환경 변수와 비밀 값 연결은 서비스와 Job에 남아서 다음 배포에도 이어진다.
 # DB_URL이 환경 변수에 있으면(로컬에서 .envrc를 읽은 경우) 그 값으로 바꾸고, 없으면(GitHub Actions) 그대로 둔다.
@@ -18,10 +19,40 @@ case "$target" in
   web) region="$WEB_REGION" ;;
   batch) region="$BATCH_REGION" ;;
   *)
-    echo "사용법: $0 <web|batch>" >&2
+    echo "사용법: $0 <web|batch> [--if-changed]" >&2
     exit 2
     ;;
 esac
+
+# 이미지 태그가 커밋 번호이므로 배포된 커밋과 지금 커밋을 비교한다. 대상 바이너리가 쓰는 이 모듈의 패키지
+# 디렉터리(템플릿, 정적 파일, 마이그레이션처럼 바이너리에 넣는 파일도 그 아래에 있다)와 빌드, 배포 설정을 본다.
+# 배포된 커밋을 알 수 없으면(처음 배포, 로컬에서 고친 채 배포한 이미지) 배포한다.
+if [[ "${2:-}" == --if-changed ]]; then
+  if [[ "$target" == web ]]; then
+    deployed="$(gcloud run services describe "$WEB_SERVICE" --region "$region" --project "$PROJECT" \
+      --format 'value(spec.template.spec.containers[0].image)' 2>/dev/null || true)"
+  else
+    deployed="$(gcloud run jobs describe "$BATCH_JOB" --region "$region" --project "$PROJECT" \
+      --format 'value(spec.template.spec.template.spec.containers[0].image)' 2>/dev/null || true)"
+  fi
+  commit="${deployed##*:}"
+  if [[ "$commit" =~ ^[0-9a-f]{12}$ ]] && git cat-file -e "${commit}^{commit}" 2>/dev/null; then
+    dirs="$(go list -deps -f '{{if not .Standard}}{{.Dir}}{{end}}' "./cmd/$target" | sed -n "s|^$root/||p")"
+    mapfile -t paths <<<"$dirs"
+    paths+=(go.mod go.sum "Dockerfile.$target" .dockerignore scripts/deploy.sh scripts/gcp-env.sh)
+    # 테스트와 문서는 이미지에 들어가지 않는다.
+    changed="$(git diff --name-only "$commit" HEAD -- "${paths[@]}" \
+      ':(exclude,glob)**/*_test.go' ':(exclude,glob)**/testdata/**' ':(exclude,glob)**/*.md')"
+    if [[ -z "$changed" ]]; then
+      echo "배포된 커밋 ${commit} 이후 ${target}에 들어가는 파일이 바뀌지 않아서 배포하지 않습니다."
+      exit 0
+    fi
+    echo "배포된 커밋 ${commit} 이후 바뀐 ${target} 파일:"
+    sed 's/^/  /' <<<"$changed"
+  else
+    echo "배포된 커밋을 알 수 없어서 배포합니다: ${deployed:-배포된 이미지 없음}"
+  fi
+fi
 
 tag="$(git rev-parse --short=12 HEAD)"
 # 추적하지 않는 파일(GitHub Actions의 gha-creds-*.json 등)은 이미지에 들어가지 않으므로 보지 않는다.
