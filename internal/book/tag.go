@@ -52,6 +52,16 @@ func (l TagList) Has(name string) bool {
 	return slices.ContainsFunc(l, func(t Tag) bool { return t.Name == name })
 }
 
+// Same은 대소문자를 가리지 않고 이름이 같은 태그를 찾아 목록에 적힌 이름을 돌려준다.
+// 관리자가 새 태그를 적을 때 sf와 SF처럼 같은 태그가 둘로 나뉘지 않게 쓴다.
+func (l TagList) Same(name string) (string, bool) {
+	i := slices.IndexFunc(l, func(t Tag) bool { return strings.EqualFold(t.Name, name) })
+	if i < 0 {
+		return "", false
+	}
+	return l[i].Name, true
+}
+
 // IsTopic은 그 이름의 태그가 모임 주제인지 알려 준다.
 func (l TagList) IsTopic(name string) bool {
 	return slices.ContainsFunc(l, func(t Tag) bool { return t.Name == name && t.Kind == TopicTag })

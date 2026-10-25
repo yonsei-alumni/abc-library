@@ -69,6 +69,11 @@ func TestTagList(t *testing.T) {
 	if !tags.IsTopic("SF") || tags.IsTopic("소설") || tags.IsTopic("없는 태그") {
 		t.Error("IsTopic은 모임 주제에만 참이어야 한다")
 	}
+	for in, want := range map[string]string{"sf": "SF", "Ai": "AI", "소설": "소설", "SF ": "", "역사": ""} {
+		if got, ok := tags.Same(in); got != want || ok != (want != "") {
+			t.Errorf("Same(%q) = %q, %v", in, got, ok)
+		}
+	}
 	if TagList(nil).Topics() != nil || len(TagList(nil).Names()) != 0 {
 		t.Error("빈 목록은 빈 결과여야 한다")
 	}

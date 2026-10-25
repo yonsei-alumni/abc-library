@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/mail"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -192,6 +193,23 @@ func (s *Server) addTag(w http.ResponseWriter, r *http.Request) {
 	s.tagAction(w, r, s.store.AddTag(r.Context(), book.Tag{Name: name, Kind: kind}), "tag-added")
 }
 
+// ensureTag는 책 편집 화면에서 적은 태그가 목록에 없으면 더하고, 목록에 적힌 이름을 돌려준다.
+// 대소문자만 다른 태그가 이미 있으면 갈래와 상관없이 그 태그를 쓴다.
+func (s *Server) ensureTag(r *http.Request, t book.Tag) (string, error) {
+	tags, err := s.store.Tags(r.Context())
+	if err != nil {
+		return "", err
+	}
+	if name, ok := tags.Same(t.Name); ok {
+		return name, nil
+	}
+	// 그사이 다른 관리자가 같은 이름을 더했으면 그 태그를 쓴다.
+	if err := s.store.AddTag(r.Context(), t); err != nil && !errors.Is(err, store.ErrConflict) {
+		return "", err
+	}
+	return t.Name, nil
+}
+
 func (s *Server) renameTag(w http.ResponseWriter, r *http.Request) {
 	name, err := book.CleanTagName(r.PostFormValue("new_name"))
 	if err != nil {
@@ -221,6 +239,9 @@ type bookForm struct {
 	Error   string
 	DupID   int64
 	MergeTo string
+	// NewTag와 NewTagKind는 태그 목록에 없어서 새로 더하며 붙일 태그의 이름과 갈래다.
+	NewTag     string
+	NewTagKind string
 }
 
 func pathID(r *http.Request) (int64, bool) {
@@ -306,16 +327,37 @@ func (s *Server) saveBook(w http.ResponseWriter, r *http.Request) {
 		KyoboPID:  strings.TrimSpace(r.PostFormValue("kyobo_pid")),
 		Tags:      r.PostForm["tag"],
 	}
-	f := bookForm{Book: b}
+	f := bookForm{Book: b, NewTag: r.PostFormValue("new_tag"), NewTagKind: r.PostFormValue("new_tag_kind")}
+	var newTag string
+	var tagErr error
+	if strings.TrimSpace(f.NewTag) != "" {
+		newTag, tagErr = book.CleanTagName(f.NewTag)
+	}
 	switch {
 	case b.Title == "":
 		f.Error = "제목을 입력해 주세요."
 	case b.ISBN13 != "" && !book.ValidISBN13(b.ISBN13):
 		f.Error = "ISBN-13이 올바르지 않습니다. 978이나 979로 시작하는 13자리 숫자를 입력해 주세요."
+	case tagErr != nil:
+		f.Error = tagErr.Error() + "."
+	case newTag != "" && f.NewTagKind != string(book.TopicTag) && f.NewTagKind != string(book.KindTag):
+		f.Error = "새 태그의 갈래를 골라 주세요."
 	}
 	if f.Error != "" {
 		s.renderBook(w, r, http.StatusBadRequest, f)
 		return
+	}
+	if newTag != "" {
+		name, err := s.ensureTag(r, book.Tag{Name: newTag, Kind: book.TagKind(f.NewTagKind)})
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		if !slices.Contains(b.Tags, name) {
+			b.Tags = append(b.Tags, name)
+		}
+		// 태그는 이미 목록에 들어갔으므로, 아래에서 저장에 실패해 화면을 다시 그려도 목록에서 체크된 채로 보인다.
+		f.Book.Tags, f.NewTag = b.Tags, ""
 	}
 	err := s.store.UpdateBook(r.Context(), b)
 	var dup *store.DuplicateError

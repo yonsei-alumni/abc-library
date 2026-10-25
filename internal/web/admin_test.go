@@ -372,7 +372,32 @@ func TestAdminBook(t *testing.T) {
 	}
 	expectCalls(t, a.st, "UpdateBook 1")
 
+	// 목록에 없는 태그는 태그 목록에 더하면서 붙이고, 대소문자만 다른 태그가 있으면 그 태그를 붙인다.
+	assertContains(t, a.get("/admin/books/1", admin).Body.String(), `name="new_tag"`, `<option value="topic" >모임 주제`)
+	for _, tc := range []struct {
+		name, kind string
+		calls      []string
+		tags       string
+	}{
+		{" #기후 ", "topic", []string{"AddTag 기후 topic", "UpdateBook 1"}, "SF,AI,기후"},
+		{"sf", "kind", []string{"UpdateBook 1"}, "SF,AI"},
+		{"소설", "topic", []string{"UpdateBook 1"}, "SF,AI,소설"},
+	} {
+		withTag := url.Values{"new_tag": {tc.name}, "new_tag_kind": {tc.kind}}
+		for k, v := range form {
+			withTag[k] = v
+		}
+		expectRedirect(t, a.post("/admin/books/1", withTag, admin), "/admin/books/1?done=book-saved")
+		expectCalls(t, a.st, tc.calls...)
+		if got := strings.Join(a.st.updated.Tags, ","); got != tc.tags {
+			t.Errorf("새 태그 %q: 저장한 태그 = %s", tc.name, got)
+		}
+	}
+
 	for name, change := range map[string]func(url.Values){
+		"쉼표가 든 새 태그": func(f url.Values) { f.Set("new_tag", "가,나"); f.Set("new_tag_kind", "kind") },
+		"갈래 없는 새 태그": func(f url.Values) { f.Set("new_tag", "기후"); f.Set("new_tag_kind", "") },
+		"긴 새 태그":     func(f url.Values) { f.Set("new_tag", strings.Repeat("가", 21)); f.Set("new_tag_kind", "kind") },
 		"제목 없음":      func(f url.Values) { f.Set("title", " ") },
 		"틀린 ISBN":    func(f url.Values) { f.Set("isbn13", "9791196914807") },
 		"ISBN-10":    func(f url.Values) { f.Set("isbn13", "8937460440") },
