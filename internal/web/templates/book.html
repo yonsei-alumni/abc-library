@@ -1,7 +1,7 @@
 {{define "content"}}
 <article class="book">
   <div class="book-head">
-    {{$src := coverBig .Book}}{{if $src}}<img class="cover cover-big" src="{{$src}}" alt="{{.Book.Title}} 표지" referrerpolicy="no-referrer">{{else}}<span class="cover cover-big cover-blank" aria-hidden="true">{{.Book.Title}}</span>{{end}}
+    {{$src := coverBig .Book}}{{if $src}}<span class="cover cover-big"><img src="{{$src}}" alt="{{.Book.Title}} 표지" referrerpolicy="no-referrer"></span>{{else}}<span class="cover cover-big cover-blank" aria-hidden="true">{{.Book.Title}}</span>{{end}}
     <div class="book-info">
       <h1 class="book-title">{{.Book.Title}}</h1>
       {{if .Book.Authors}}<p class="book-authors">{{range $i, $a := .Book.Authors}}{{if $i}}, {{end}}<a href="/books?author={{$a}}">{{$a}}</a>{{end}}</p>{{end}}
@@ -12,8 +12,10 @@
         {{range .In}}<a class="my-category" href="/me/categories/{{.ID}}">{{.Title}}</a>{{else}}<span class="muted">카테고리 없음</span>{{end}}
       </p>
       {{end}}{{end}}
-      <a class="buy" href="{{buyURL .Book}}" target="_blank" rel="noopener">교보문고에서 보기</a>
-      {{if .Admin}}<a class="button button-quiet admin-link" href="/admin/books/{{.Book.ID}}">책 편집</a>{{end}}
+      <p class="book-actions">
+        <a class="buy" href="{{buyURL .Book}}" target="_blank" rel="noopener">교보문고에서 보기</a>
+        {{if .Admin}}<a class="button button-quiet" href="/admin/books/{{.Book.ID}}">책 편집</a>{{end}}
+      </p>
     </div>
   </div>
 
@@ -47,18 +49,24 @@
       <li class="thread" id="post-{{.PostNo}}">
         {{with .Post}}
         <div class="mention">
-          <p class="mention-meta"><span class="kind">게시글</span> <time datetime="{{isoDate .At}}">{{date .At}}</time>{{if $.Admin}} <a class="edit-link" href="/admin/mentions/{{.ID}}">편집</a>{{end}}</p>
-          <p class="summary">{{.Summary}}</p>
-          {{template "links" .Links}}
+          <span class="avatar" aria-hidden="true">{{template "icon-talk"}}</span>
+          <div class="mention-body">
+            <p class="mention-meta"><span class="kind">게시글</span> <time datetime="{{isoDate .At}}">{{date .At}}</time>{{if $.Admin}} <a class="edit-link" href="/admin/mentions/{{.ID}}">편집</a>{{end}}</p>
+            <p class="summary">{{.Summary}}</p>
+            {{template "links" .Links}}
+          </div>
         </div>
         {{end}}
         {{if .Comments}}
         <ol class="replies">
           {{range .Comments}}
           <li class="mention mention-comment">
-            <p class="mention-meta"><span class="kind kind-comment">댓글</span> <time datetime="{{isoDate .At}}">{{date .At}}</time>{{if $.Admin}} <a class="edit-link" href="/admin/mentions/{{.ID}}">편집</a>{{end}}</p>
-            <p class="summary">{{.Summary}}</p>
-            {{template "links" .Links}}
+            <span class="avatar avatar-sm" aria-hidden="true">{{template "icon-reply"}}</span>
+            <div class="mention-body">
+              <p class="mention-meta"><span class="kind kind-comment">댓글</span> <time datetime="{{isoDate .At}}">{{date .At}}</time>{{if $.Admin}} <a class="edit-link" href="/admin/mentions/{{.ID}}">편집</a>{{end}}</p>
+              <p class="summary">{{.Summary}}</p>
+              {{template "links" .Links}}
+            </div>
           </li>
           {{end}}
         </ol>

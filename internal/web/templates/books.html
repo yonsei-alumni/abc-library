@@ -17,7 +17,7 @@
     {{template "cover" .Book}}
     <span class="card-title">{{.Book.Title}}</span>
     <span class="card-authors">{{authors .Book.Authors}}</span>
-    <span class="card-meta">게시글 {{.PostCount}}개 · {{date .LastPostedAt}}</span>
+    <span class="card-meta">게시글 {{.PostCount}}개<br><time datetime="{{isoTime .LastPostedAt}}" data-relative>{{date .LastPostedAt}}</time></span>
   </a>
 </li>
 {{end}}

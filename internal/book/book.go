@@ -99,12 +99,15 @@ type Shelved struct {
 
 // Entry는 타임라인의 소식 하나다. IsNew가 참이면 이 게시글로 책이 처음 등록됐다는 뜻이다.
 // Summary는 그 글이 책에 대해 한 이야기의 요약이다. 본문 언급이 있으면 그것을, 없으면 첫 댓글 언급을 쓴다.
+// Comments는 그 글의 댓글 중 이 책을 다룬 언급의 수, Mentions는 이 책의 모든 언급 수다.
 type Entry struct {
 	Book     Book
 	PostNo   int
 	PostedAt time.Time
 	IsNew    bool
 	Summary  string
+	Comments int
+	Mentions int
 }
 
 // Count는 태그나 저자별 책 수다.

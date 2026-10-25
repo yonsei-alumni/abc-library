@@ -6,7 +6,7 @@
 <title>{{.Title}} · ABC 도서관</title>
 <meta name="description" content="아카라카북클럽(ABC)에서 함께 읽고 추천한 책">
 <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#212126" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#161c25" media="(prefers-color-scheme: dark)">
 <meta name="apple-mobile-web-app-title" content="ABC 도서관">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="{{static "icon.svg"}}" type="image/svg+xml">
@@ -17,13 +17,13 @@
 </head>
 <body hx-boost="true">
 <header class="site-header">
-  <div class="wrap">
+  <div class="wrap header-bar">
     <a class="brand" href="/"><span class="brand-mark">ABC</span> 도서관</a>
     <form class="search" action="/books" method="get" role="search">
       <input type="search" name="q" value="{{with .Query}}{{.}}{{end}}" placeholder="제목, 저자, 태그 검색" aria-label="책 검색" autocomplete="off"
         hx-get="/books" hx-trigger="input changed delay:400ms, search" hx-target="#content" hx-select="#content" hx-swap="outerHTML" hx-push-url="true">
     </form>
-    <nav class="nav">
+    <nav class="nav" aria-label="주 메뉴">
       <a href="/" {{if eq .Nav "timeline"}}aria-current="page"{{end}}>소식</a>
       <a href="/books" {{if eq .Nav "books"}}aria-current="page"{{end}}>책</a>
       <a href="/tags" {{if eq .Nav "tags"}}aria-current="page"{{end}}>태그</a>
@@ -31,6 +31,7 @@
       {{if .UserLogin}}<a href="/shared" {{if eq .Nav "shared"}}aria-current="page"{{end}}>공개 북마크</a>{{end}}
       {{if .User}}<a href="/me" {{if eq .Nav "me"}}aria-current="page"{{end}}>내 북마크</a>{{else if .UserLogin}}<a href="/login?next={{.Path}}">로그인</a>{{end}}
       {{if .Admin}}<a href="/admin/tags" {{if eq .Nav "admin"}}aria-current="page"{{end}}>관리</a>{{end}}
+      <a href="/help" {{if eq .Nav "help"}}aria-current="page"{{end}}>도움말</a>
     </nav>
   </div>
 </header>
@@ -39,9 +40,9 @@
 </main>
 <footer class="site-footer">
   <div class="wrap">
-    아카라카북클럽(ABC) 밴드의 게시글과 댓글에 나온 책 이야기를 AI가 개인 정보를 빼고 요약했습니다.
-    밴드 원문은 멤버만 볼 수 있습니다. 표지와 구매 링크는 교보문고를 따릅니다.
-    <p class="footer-links"><a href="/privacy">개인정보 처리방침</a></p>
+    <p class="footer-note">아카라카북클럽(ABC) 밴드의 게시글과 댓글에 나온 책 이야기를 AI가 개인 정보를 빼고 요약했습니다.
+    밴드 원문은 멤버만 볼 수 있습니다. 표지와 구매 링크는 교보문고를 따릅니다.</p>
+    <p class="footer-links"><a href="/help">도움말</a> <a href="/privacy">개인정보 처리방침</a></p>
     {{if or .Admin .User}}
     <form class="account" method="post" action="/logout">{{with .Admin}}<span>{{.}}</span>{{else}}<span>로그인함</span>{{end}} <button class="link-button">로그아웃</button></form>
     {{end}}

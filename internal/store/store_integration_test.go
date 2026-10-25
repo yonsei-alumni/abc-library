@@ -124,6 +124,10 @@ func TestSavePostAndQueries(t *testing.T) {
 	if len(entries) == 2 && (entries[0].Summary != "두 번째 글의 댓글" || entries[1].Summary != "본문 요약") {
 		t.Errorf("소식 요약 = %q, %q", entries[0].Summary, entries[1].Summary)
 	}
+	// 소식마다 그 글에서 이 책을 다룬 댓글 수와 이 책의 모든 언급 수를 센다.
+	if len(entries) == 2 && (entries[0].Comments != 1 || entries[1].Comments != 1 || entries[0].Mentions != 3 || entries[1].Mentions != 3) {
+		t.Errorf("소식의 댓글 수와 언급 수 = %+v", entries)
+	}
 
 	if no, err := s.LastPostNo(ctx); err != nil || no != 2 {
 		t.Errorf("LastPostNo = %d, %v", no, err)

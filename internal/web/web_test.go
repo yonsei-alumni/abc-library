@@ -58,7 +58,8 @@ func (f *fakeStore) Timeline(_ context.Context, limit, offset int) ([]book.Entry
 	f.offsets = append(f.offsets, offset)
 	var es []book.Entry
 	for i := offset; i < f.entries && len(es) < limit; i++ {
-		es = append(es, book.Entry{Book: story, PostNo: 184, PostedAt: posted, IsNew: i == 0, Summary: "언어를 배우며\n시간을 다르게 본다."})
+		es = append(es, book.Entry{Book: story, PostNo: 184, PostedAt: posted, IsNew: i == 0, Summary: "언어를 배우며\n시간을 다르게 본다.",
+			Comments: i % 2, Mentions: 7})
 	}
 	return es, nil
 }
@@ -213,8 +214,13 @@ func TestTimelinePagesWithHTMX(t *testing.T) {
 		t.Fatalf("code = %d", code)
 	}
 	assertContains(t, body, "<title>최근 소식 · ABC 도서관</title>", "새 책", "이야기 추가", "/books/1",
-		"https://contents.kyobobook.co.kr/sih/fit-in/240x0/pdt/9791196914806.jpg", `hx-get="/?page=2"`, "2026년 10월 21일",
-		`<span class="entry-excerpt">언어를 배우며 시간을 다르게 본다.</span>`)
+		"https://contents.kyobobook.co.kr/sih/fit-in/240x0/pdt/9791196914806.jpg", `hx-get="/?page=2"`, `hx-trigger="revealed, click"`,
+		`<time class="post-time" datetime="2026-10-21T01:24:00+09:00" data-relative>2026년 10월 21일</time>`,
+		`<span class="post-text">언어를 배우며 시간을 다르게 본다.</span>`, "#SF", "댓글 1개", "이 책의 이야기 7개")
+	// 그 글에 이 책을 다룬 댓글이 없으면 댓글 수를 적지 않는다.
+	if strings.Contains(body, "댓글 0개") {
+		t.Error("댓글이 없는 소식에 댓글 수가 있다")
+	}
 	// 새 책은 책 상세의 처음으로, 이야기 추가는 그 글의 언급 묶음으로 연결한다.
 	if strings.Count(body, `href="/books/1"`) != 1 || strings.Count(body, `href="/books/1#post-184"`) != pageSize-1 {
 		t.Error("이야기 추가 소식은 책 상세의 그 글 묶음으로 연결해야 한다")
@@ -387,6 +393,31 @@ func TestPrivacyPage(t *testing.T) {
 	// 모든 화면 아래쪽에서 처리방침으로 갈 수 있다.
 	_, home := get(t, &fakeStore{}, "/")
 	assertContains(t, home, `<a href="/privacy">개인정보 처리방침</a>`)
+}
+
+func TestHelpPage(t *testing.T) {
+	code, body := get(t, &fakeStore{}, "/help")
+	if code != http.StatusOK {
+		t.Fatalf("code = %d", code)
+	}
+	assertContains(t, body, "<title>도움말 · ABC 도서관</title>", `<a href="/help" aria-current="page">도움말</a>`,
+		"설치 및 바로가기 만들기", "홈 화면에 추가", "웹 앱으로 열기", "/privacy")
+	// 캡처는 밝은 화면과 어두운 화면을 짝으로 두고, 적어 둔 그림 파일이 모두 있어야 한다.
+	shots := regexp.MustCompile(`/static/help/[a-z-]+\.webp\?v=[0-9a-f]{8}`).FindAllString(body, -1)
+	if len(shots) != 8 {
+		t.Errorf("도움말 캡처 수 = %d", len(shots))
+	}
+	s := newServer(t, &fakeStore{})
+	for _, shot := range shots {
+		rec := httptest.NewRecorder()
+		s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, shot, nil))
+		if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "image/webp" {
+			t.Errorf("%s: code = %d, type = %q", shot, rec.Code, rec.Header().Get("Content-Type"))
+		}
+	}
+	// 모든 화면의 메뉴와 아래쪽에서 도움말로 갈 수 있다.
+	_, home := get(t, &fakeStore{}, "/")
+	assertContains(t, home, `<a href="/help" >도움말</a>`, `<a href="/help">도움말</a>`)
 }
 
 func TestPrivacyPageLeavesOutAdminEmail(t *testing.T) {

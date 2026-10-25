@@ -1,5 +1,7 @@
 {{define "content"}}
+<div class="feed">
 <h1 class="page-title">최근 소식</h1>
+<p class="feed-lead">밴드에서 나눈 책 이야기를 하루 한 번 모읍니다. 처음이라면 <a href="/help">도움말</a>을 보세요.</p>
 {{if .Entries}}
 <ol class="timeline">
 {{template "timeline-items" .}}
@@ -7,26 +9,38 @@
 {{else}}
 <p class="empty">아직 등록된 책이 없습니다.</p>
 {{end}}
+</div>
 {{end}}
 
+{{/* 소식 하나는 SNS 글처럼 그린다. 머리에 소식 종류와 시각, 몸통에 요약, 그 아래에 책을 붙이고, 발에 댓글 수와 이 책의 이야기 수를 둔다. */}}
 {{define "timeline-items"}}
 {{range .Entries}}
-<li class="entry">
-  <time class="entry-date" datetime="{{isoDate .PostedAt}}">{{date .PostedAt}}</time>
-  <a class="entry-card" href="/books/{{.Book.ID}}{{if not .IsNew}}#post-{{.PostNo}}{{end}}">
-    {{template "cover" .Book}}
-    <span class="entry-body">
-      <span class="badge {{if .IsNew}}badge-new{{end}}">{{if .IsNew}}새 책{{else}}이야기 추가{{end}}</span>
-      <span class="entry-title">{{.Book.Title}}</span>
-      <span class="entry-authors">{{authors .Book.Authors}}</span>
-      {{with excerpt .Summary}}<span class="entry-excerpt">{{.}}</span>{{end}}
+<li class="post">
+  <a class="post-card" href="/books/{{.Book.ID}}{{if not .IsNew}}#post-{{.PostNo}}{{end}}">
+    <span class="post-head">
+      <span class="avatar {{if .IsNew}}avatar-new{{end}}">{{if .IsNew}}{{template "icon-new"}}{{else}}{{template "icon-talk"}}{{end}}</span>
+      <span class="post-kind">{{if .IsNew}}새 책{{else}}이야기 추가{{end}}</span>
+      <time class="post-time" datetime="{{isoTime .PostedAt}}" data-relative>{{date .PostedAt}}</time>
+    </span>
+    {{with excerpt .Summary}}<span class="post-text">{{.}}</span>{{end}}
+    <span class="attach">
+      {{template "cover" .Book}}
+      <span class="attach-body">
+        <span class="attach-title">{{.Book.Title}}</span>
+        {{with .Book.Authors}}<span class="attach-authors">{{authors .}}</span>{{end}}
+        {{with .Book.Tags}}<span class="attach-tags">{{range .}}<span>#{{.}}</span> {{end}}</span>{{end}}
+      </span>
+    </span>
+    <span class="post-foot">
+      {{if .Comments}}<span>{{template "icon-reply"}} 댓글 {{.Comments}}개</span>{{end}}
+      <span>{{template "icon-stack"}} 이 책의 이야기 {{.Mentions}}개</span>
     </span>
   </a>
 </li>
 {{end}}
 {{if .NextPage}}
 <li class="more-row" id="timeline-more">
-  <button class="more" hx-get="/?page={{.NextPage}}" hx-target="#timeline-more" hx-swap="outerHTML">더 보기</button>
+  <button class="more" hx-get="/?page={{.NextPage}}" hx-trigger="revealed, click" hx-target="#timeline-more" hx-swap="outerHTML">더 보기</button>
 </li>
 {{end}}
 {{end}}

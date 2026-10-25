@@ -1,4 +1,10 @@
-{{define "cover"}}{{$src := cover .}}{{if $src}}<img class="cover" src="{{$src}}" alt="{{.Title}} 표지" loading="lazy" referrerpolicy="no-referrer">{{else}}<span class="cover cover-blank" aria-hidden="true">{{.Title}}</span>{{end}}{{end}}
+{{/* 표지는 책등 그림자를 얹으려고 span으로 감싼다. 표지가 없으면 제목을 쓴 천 표지를 그린다. */}}
+{{define "cover"}}{{$src := cover .}}{{if $src}}<span class="cover"><img src="{{$src}}" alt="{{.Title}} 표지" loading="lazy" referrerpolicy="no-referrer"></span>{{else}}<span class="cover cover-blank" aria-hidden="true">{{.Title}}</span>{{end}}{{end}}
+
+{{define "icon-new"}}<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H18v15H6.5A1.5 1.5 0 0 0 5 19.5z"/><path d="M5 19.5A1.5 1.5 0 0 0 6.5 21H18v-3"/><path d="M11.5 7.5v6M8.5 10.5h6"/></svg>{{end}}
+{{define "icon-talk"}}<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a7.5 7.5 0 0 1-11.2 6.5L4 20l1.4-4.3A7.5 7.5 0 1 1 20 12z"/></svg>{{end}}
+{{define "icon-reply"}}<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a7.5 7.5 0 0 1-11.2 6.5L4 20l1.4-4.3A7.5 7.5 0 1 1 20 12z"/></svg>{{end}}
+{{define "icon-stack"}}<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5 12 3l8 3.5-8 3.5z"/><path d="m4 11.5 8 3.5 8-3.5"/><path d="m4 16.5 8 3.5 8-3.5"/></svg>{{end}}
 
 {{define "tag-list"}}{{if .}}<ul class="tags">{{range .}}<li><a class="{{if .Topic}}tag-topic{{end}}" href="/books?tag={{.Name}}">#{{.Name}}</a></li>{{end}}</ul>{{end}}{{end}}
 

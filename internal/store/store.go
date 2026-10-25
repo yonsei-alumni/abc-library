@@ -323,6 +323,8 @@ type entryRow struct {
 	PostedAt   time.Time `bun:"posted_at"`
 	IsNew      bool      `bun:"is_new"`
 	Summary    string    `bun:"summary"`
+	Comments   int       `bun:"comments"`
+	Mentions   int       `bun:"book_mentions"`
 }
 
 // Timeline은 최근 소식을 시각의 역순으로 돌려준다. 같은 글에서 같은 책을 여러 번 다뤘으면 소식 하나로 묶는다.
@@ -331,12 +333,14 @@ func (s *Store) Timeline(ctx context.Context, limit, offset int) ([]book.Entry, 
 	err := s.db.NewRaw(`
 		WITH news AS (
 			SELECT m.book_id, p.band_post_no, min(m.mentioned_at) AS posted_at,
-			       (array_agg(m.summary ORDER BY m.kind = 'post' DESC, m.mentioned_at, m.id))[1] AS summary
+			       (array_agg(m.summary ORDER BY m.kind = 'post' DESC, m.mentioned_at, m.id))[1] AS summary,
+			       count(*) FILTER (WHERE m.kind = 'comment') AS comments, count(*) AS mentions
 			FROM mentions m JOIN posts p ON p.id = m.post_id
 			WHERE NOT m.hidden
 			GROUP BY m.book_id, p.band_post_no
 		)
-		SELECT `+bookColumns+`, n.band_post_no, n.posted_at, n.summary,
+		SELECT `+bookColumns+`, n.band_post_no, n.posted_at, n.summary, n.comments,
+		       (sum(n.mentions) OVER (PARTITION BY n.book_id))::int AS book_mentions,
 		       n.posted_at = min(n.posted_at) OVER (PARTITION BY n.book_id) AS is_new
 		FROM news n JOIN books b ON b.id = n.book_id
 		ORDER BY n.posted_at DESC, b.id
@@ -346,7 +350,8 @@ func (s *Store) Timeline(ctx context.Context, limit, offset int) ([]book.Entry, 
 	}
 	entries := make([]book.Entry, len(rows))
 	for i, r := range rows {
-		entries[i] = book.Entry{Book: r.toBook(), PostNo: r.BandPostNo, PostedAt: r.PostedAt, IsNew: r.IsNew, Summary: r.Summary}
+		entries[i] = book.Entry{Book: r.toBook(), PostNo: r.BandPostNo, PostedAt: r.PostedAt, IsNew: r.IsNew, Summary: r.Summary,
+			Comments: r.Comments, Mentions: r.Mentions}
 	}
 	return entries, nil
 }

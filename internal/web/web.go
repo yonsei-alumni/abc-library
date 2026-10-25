@@ -120,6 +120,7 @@ func New(st Store, cfg Config, log *slog.Logger) (*Server, error) {
 	funcs := template.FuncMap{
 		"date":     func(t time.Time) string { return t.In(seoul).Format("2006년 1월 2일") },
 		"isoDate":  func(t time.Time) string { return t.In(seoul).Format("2006-01-02") },
+		"isoTime":  func(t time.Time) string { return t.In(seoul).Format(time.RFC3339) },
 		"cover":    func(b book.Book) string { return coverURL(b, 240) },
 		"coverBig": func(b book.Book) string { return coverURL(b, 458) },
 		"buyURL":   buyURL,
@@ -133,7 +134,7 @@ func New(st Store, cfg Config, log *slog.Logger) (*Server, error) {
 		"add":      func(a, b int) int { return a + b },
 	}
 	for _, page := range []string{"timeline", "books", "book", "tags", "authors", "error", "login",
-		"admin-tags", "admin-book", "admin-mention", "admin-admins", "me", "category", "shared", "shared-list", "privacy"} {
+		"admin-tags", "admin-book", "admin-mention", "admin-admins", "me", "category", "shared", "shared-list", "privacy", "help"} {
 		t, err := template.New("").Funcs(funcs).ParseFS(templateFiles, "templates/layout.html", "templates/parts.html", "templates/"+page+".html")
 		if err != nil {
 			return nil, err
@@ -203,6 +204,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /authors", s.authors)
 	mux.HandleFunc("GET /privacy", func(w http.ResponseWriter, r *http.Request) {
 		s.render(w, r, "privacy", "layout", map[string]any{"Title": "개인정보 처리방침", "Nav": ""})
+	})
+	mux.HandleFunc("GET /help", func(w http.ResponseWriter, r *http.Request) {
+		s.render(w, r, "help", "layout", map[string]any{"Title": "도움말", "Nav": "help"})
 	})
 	s.accountRoutes(mux)
 	s.adminRoutes(mux)
