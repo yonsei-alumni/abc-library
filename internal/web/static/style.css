@@ -211,8 +211,17 @@ main.wrap { padding-top: 28px; padding-bottom: 48px; min-height: 60vh; }
 .shared .markdown { margin-bottom: 28px; }
 .shared-books h2 { font-size: 1.1rem; margin: 0 0 14px; }
 .shared-list .count { margin-left: auto; }
+.footer-links { margin: 10px 0 0; }
 .card-order { display: flex; gap: 6px; margin-top: 6px; }
 .card { scroll-margin-top: 16px; }
+.policy { max-width: 760px; line-height: 1.7; }
+.policy h2 { font-size: 1.1rem; margin: 32px 0 8px; }
+.policy ul { padding-left: 1.2em; }
+.policy a { color: var(--accent); }
+.policy table { width: 100%; border-collapse: collapse; font-size: .9rem; line-height: 1.55; margin: 8px 0; }
+.policy th, .policy td { border: 1px solid var(--line); padding: 6px 8px; text-align: left; vertical-align: top; }
+.policy th { background: var(--card); font-weight: 600; }
+.policy .table-wrap { overflow-x: auto; }
 
 @media (max-width: 600px) {
   .entry { grid-template-columns: 1fr; gap: 6px; }

@@ -376,3 +376,23 @@ func TestHealth(t *testing.T) {
 		}
 	}
 }
+
+func TestPrivacyPage(t *testing.T) {
+	code, body := get(t, &fakeStore{}, "/privacy")
+	if code != http.StatusOK {
+		t.Fatalf("code = %d", code)
+	}
+	assertContains(t, body, "<title>개인정보 처리방침 · ABC 도서관</title>", "HMAC-SHA256", "처리 위탁과 국외 이전",
+		"Anthropic, PBC", "싱가포르", "개인정보 보호책임자", "시행일")
+	// 모든 화면 아래쪽에서 처리방침으로 갈 수 있다.
+	_, home := get(t, &fakeStore{}, "/")
+	assertContains(t, home, `<a href="/privacy">개인정보 처리방침</a>`)
+}
+
+func TestPrivacyPageLeavesOutAdminEmail(t *testing.T) {
+	// 관리자는 운영자 본인뿐이라서 처리방침에 관리자 메일 주소를 적지 않는다(AGENTS.md).
+	_, body := get(t, &fakeStore{}, "/privacy")
+	if strings.Contains(body, "관리자 메일") || strings.Contains(body, "관리자의 메일") {
+		t.Error("처리방침에 관리자 메일 주소 항목이 있다")
+	}
+}

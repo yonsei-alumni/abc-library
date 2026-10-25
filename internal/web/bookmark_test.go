@@ -179,7 +179,9 @@ func TestUserLoginStoresOnlySubjectHash(t *testing.T) {
 		t.Fatalf("code = %d", rec.Code)
 	}
 	body := rec.Body.String()
-	assertContains(t, body, "메일 주소는 받지 않고 DB에도 저장하지 않습니다", "단방향 암호화(HMAC-SHA256)", "Google 계정으로 로그인", "계정을 지우면")
+	assertContains(t, body, "이 사이트는 회원의 이름, 메일 주소, 프로필 사진을 저장하지 않습니다.",
+		"회원 식별을 위해 Google 계정 고유 번호(sub)를 단방향 암호화(HMAC-SHA256)한 값만을 DB에 저장합니다.", "Google 계정으로 로그인",
+		`<a href="/privacy">개인정보 처리방침</a>에 있습니다`)
 	if strings.Contains(body, `name="admin"`) {
 		t.Error("사용자 로그인 폼에 관리자 표시가 있으면 안 된다")
 	}
@@ -400,7 +402,7 @@ func TestMyBookmarksPage(t *testing.T) {
 	a.st.marks = map[[2]int64][]int64{{uid, 1}: {101, 102}}
 	body := a.get("/me", me).Body.String()
 	assertContains(t, body, "카테고리 2개", `href="/me/categories/101"`, "https://abc-lib.web.app/shared/sfq", "비공개",
-		"북마크 1권", "당신 인생의 이야기", "올해의 SF, 나중에 읽기", "계정 지우기")
+		"북마크 1권", "당신 인생의 이야기", "올해의 SF, 나중에 읽기", "계정 지우기", "계정을 삭제하면 저장한 북마크 정보가 함께 삭제됩니다.")
 	if strings.Contains(body, "/shared/prv") {
 		t.Error("공개하지 않은 카테고리의 주소가 목록에 보인다")
 	}

@@ -41,6 +41,7 @@
   <div class="wrap">
     아카라카북클럽(ABC) 밴드의 게시글과 댓글에 나온 책 이야기를 AI가 개인 정보를 빼고 요약했습니다.
     밴드 원문은 멤버만 볼 수 있습니다. 표지와 구매 링크는 교보문고를 따릅니다.
+    <p class="footer-links"><a href="/privacy">개인정보 처리방침</a></p>
     {{if or .Admin .User}}
     <form class="account" method="post" action="/logout">{{with .Admin}}<span>{{.}}</span>{{else}}<span>로그인함</span>{{end}} <button class="link-button">로그아웃</button></form>
     {{end}}

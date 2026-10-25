@@ -45,7 +45,7 @@
 
 <section class="admin-section">
   <h2>계정</h2>
-  <p class="hint">메일 주소는 저장하지 않고, Google 계정 고유 번호를 단방향 암호화(HMAC-SHA256)한 값으로만 알아봅니다.</p>
+  <p class="hint">계정을 삭제하면 저장한 북마크 정보가 함께 삭제됩니다.</p>
   <form method="post" action="/me/delete" onsubmit="return confirm('북마크와 카테고리를 모두 지우고 계정을 없앨까요? 되돌릴 수 없습니다.')">
     <button class="button button-danger">계정 지우기</button>
   </form>

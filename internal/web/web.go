@@ -132,7 +132,7 @@ func New(st Store, cfg Config, log *slog.Logger) (*Server, error) {
 		"add":      func(a, b int) int { return a + b },
 	}
 	for _, page := range []string{"timeline", "books", "book", "tags", "authors", "error", "login",
-		"admin-tags", "admin-book", "admin-mention", "admin-admins", "me", "category", "shared", "shared-list"} {
+		"admin-tags", "admin-book", "admin-mention", "admin-admins", "me", "category", "shared", "shared-list", "privacy"} {
 		t, err := template.New("").Funcs(funcs).ParseFS(templateFiles, "templates/layout.html", "templates/parts.html", "templates/"+page+".html")
 		if err != nil {
 			return nil, err
@@ -200,6 +200,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /books/{id}", s.book)
 	mux.HandleFunc("GET /tags", s.tags)
 	mux.HandleFunc("GET /authors", s.authors)
+	mux.HandleFunc("GET /privacy", func(w http.ResponseWriter, r *http.Request) {
+		s.render(w, r, "privacy", "layout", map[string]any{"Title": "개인정보 처리방침", "Nav": ""})
+	})
 	s.accountRoutes(mux)
 	s.adminRoutes(mux)
 	s.bookmarkRoutes(mux)

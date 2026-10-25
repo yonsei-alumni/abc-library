@@ -147,6 +147,9 @@ func TestLoginFlow(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("code = %d", rec.Code)
 	}
+	if strings.Contains(rec.Body.String(), "회원의 이름, 메일 주소") {
+		t.Error("관리자 로그인 화면에는 메일 주소를 저장하지 않는다는 안내가 없어야 한다")
+	}
 	assertContains(t, rec.Body.String(), "관리자 로그인", "관리자 간의 의사소통을 위해 Google 계정의 메일 주소를 저장합니다", "관리자 목록 외에는 사용자의 메일 주소를 이 사이트의 데이터베이스에 저장하지 않습니다", `name="admin" value="1"`, `name="next" value="/books/1"`)
 
 	state, pending := a.startLogin("/books/1", true)
