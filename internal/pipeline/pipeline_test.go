@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -20,9 +21,31 @@ type fakeSource struct {
 	posts  map[int]band.Post
 	errs   map[int]error
 	opened []int
+	// cards는 '최신 댓글순' 목록의 카드다. read는 그중 읽은 카드 수다.
+	cards    []band.Activity
+	cardsErr error
+	read     int
 }
 
 func (f *fakeSource) LatestPostNo() (int, error) { return f.latest, nil }
+
+func (f *fakeSource) RecentlyCommented(done func(band.Activity) bool, limit int) ([]band.Activity, error) {
+	if f.cardsErr != nil {
+		return nil, f.cardsErr
+	}
+	var out []band.Activity
+	for _, a := range f.cards {
+		if len(out) == limit {
+			break
+		}
+		out = append(out, a)
+		if done(a) {
+			break
+		}
+	}
+	f.read = len(out)
+	return out, nil
+}
 
 func (f *fakeSource) Post(no int) (band.Post, error) {
 	f.opened = append(f.opened, no)
@@ -52,6 +75,7 @@ func (f *fakeExtractor) Extract(_ context.Context, in extract.Input) ([]book.Fin
 type fakeStore struct {
 	last    int
 	hashes  map[int]string
+	counts  map[int]int
 	recent  []int
 	saved   map[int][]book.Finding
 	pending map[int]string
@@ -67,11 +91,30 @@ func (f *fakeStore) PostHash(_ context.Context, no int) (string, bool, error) {
 
 func (f *fakeStore) PostNosSince(context.Context, time.Time) ([]int, error) { return f.recent, nil }
 
-func (f *fakeStore) SavePost(_ context.Context, p book.Post, findings []book.Finding) error {
+func (f *fakeStore) CommentCounts(context.Context) (map[int]int, error) {
+	counts := map[int]int{}
+	for no := range f.hashes {
+		counts[no] = -1
+		if c, ok := f.counts[no]; ok {
+			counts[no] = c
+		}
+	}
+	return counts, nil
+}
+
+func (f *fakeStore) SetCommentCount(_ context.Context, no, count int) error {
+	if f.counts == nil {
+		f.counts = map[int]int{}
+	}
+	f.counts[no] = count
+	return nil
+}
+
+func (f *fakeStore) SavePost(ctx context.Context, p book.Post, findings []book.Finding) error {
 	f.saved[p.No] = findings
 	f.hashes[p.No] = p.ContentHash
 	delete(f.pending, p.No)
-	return nil
+	return f.SetCommentCount(ctx, p.No, p.CommentCount)
 }
 
 func (f *fakeStore) StartRun(context.Context) (int64, error) {
@@ -133,6 +176,92 @@ func TestRunProcessesNewAndChangedPosts(t *testing.T) {
 	}
 	if _, ok := st.saved[6]; !ok || len(st.saved[6]) != 0 {
 		t.Errorf("거절된 글은 책 없이 저장해야 한다: %+v", st.saved)
+	}
+}
+
+func TestRunReadsOldPostsWithNewComments(t *testing.T) {
+	sticker := post(1, "스티커 댓글만 달린 글")
+	sticker.CommentCount = 1
+	commented := post(3, "새 댓글이 달린 글")
+	commented.CommentCount = 2
+	src := &fakeSource{
+		latest: 9,
+		posts:  map[int]band.Post{1: sticker, 2: post(2, "b"), 3: commented, 4: post(4, "d"), 9: post(9, "새 글")},
+		// 최근 댓글 시각의 역순이다. 9는 아직 저장하지 않은 새 글이고, 4는 저장한 댓글 수와 같다.
+		cards: []band.Activity{{No: 3, Comments: 2}, {No: 9, Comments: 1}, {No: 1, Comments: 1}, {No: 4, Comments: 3}, {No: 2, Comments: 5}},
+	}
+	st := &fakeStore{
+		last: 8,
+		// 3은 댓글 수를 저장하기 전에 저장한 글이다.
+		hashes: map[int]string{1: ContentHash(post(1, "스티커 댓글만 달린 글")), 2: "h2", 3: "옛 해시", 4: "h4"},
+		counts: map[int]int{1: 0, 2: 4, 4: 3},
+		saved:  map[int][]book.Finding{},
+	}
+	ex := &fakeExtractor{}
+
+	// 최근 글을 다시 확인하지 않아도 오래된 글에 달린 새 댓글을 찾는다.
+	r, err := Run(context.Background(), src, ex, st, Options{RecheckDays: 0}, quiet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 4에서 멈추므로 그 아래의 2는 읽지 않는다. 새 글 9는 댓글 목록과 상관없이 새 글로 읽는다.
+	if !slices.Equal(src.opened, []int{3, 1, 9}) || src.read != 4 {
+		t.Errorf("열어 본 글 = %v, 읽은 카드 %d장", src.opened, src.read)
+	}
+	if r.Extracted != 2 || r.Unchanged != 1 || ex.calls != 2 {
+		t.Errorf("report = %+v, 추출 %d번", r, ex.calls)
+	}
+	// 내용이 그대로인 글도 댓글 수는 맞춰서 다음 실행에서 다시 읽지 않는다.
+	if st.counts[1] != 1 || st.counts[3] != 2 || st.counts[2] != 4 {
+		t.Errorf("댓글 수 = %v", st.counts)
+	}
+
+	// 다음 실행에서는 맨 위 카드가 저장한 댓글 수와 같으므로 바로 멈춘다.
+	src.opened = nil
+	st.last = 9
+	if _, err := Run(context.Background(), src, ex, st, Options{}, quiet); err != nil {
+		t.Fatal(err)
+	}
+	if len(src.opened) != 0 || src.read != 1 {
+		t.Errorf("열어 본 글 = %v, 읽은 카드 %d장", src.opened, src.read)
+	}
+}
+
+func TestRunStopsReadingCardsAtTheLimit(t *testing.T) {
+	src := &fakeSource{latest: MaxCommentCards + 10, posts: map[int]band.Post{}}
+	st := &fakeStore{last: MaxCommentCards + 10, hashes: map[int]string{}, saved: map[int][]book.Finding{}}
+	// 댓글 수를 모르는 글만 있으면 상한까지만 읽는다.
+	same := post(1, "그대로인 글")
+	for no := 1; no <= MaxCommentCards+10; no++ {
+		src.posts[no] = same
+		st.hashes[no] = ContentHash(same)
+		src.cards = append(src.cards, band.Activity{No: no, Comments: 1})
+	}
+	r, err := Run(context.Background(), src, &fakeExtractor{}, st, Options{}, quiet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if src.read != MaxCommentCards || r.Checked != MaxCommentCards || r.Unchanged != MaxCommentCards {
+		t.Errorf("읽은 카드 %d장, report = %+v", src.read, r)
+	}
+}
+
+func TestRunProcessesOtherPostsWhenCommentCheckFails(t *testing.T) {
+	src := &fakeSource{latest: 2, posts: map[int]band.Post{2: post(2, "새 글")}, cardsErr: errors.New("정렬 버튼이 없다")}
+	st := &fakeStore{last: 1, hashes: map[int]string{1: "h1"}, saved: map[int][]book.Finding{}}
+
+	r, err := Run(context.Background(), src, &fakeExtractor{}, st, Options{}, quiet)
+	if err == nil || !strings.Contains(err.Error(), "정렬 버튼이 없다") {
+		t.Errorf("새 댓글을 찾지 못하면 실행은 실패로 남아야 한다: %v", err)
+	}
+	if r.Extracted != 1 || st.runs[0].Error == "" {
+		t.Errorf("새 글은 처리해야 한다: %+v, 실행 기록 %+v", r, st.runs[0])
+	}
+
+	src.cardsErr = band.ErrSessionExpired
+	src.opened = nil
+	if _, err := Run(context.Background(), src, &fakeExtractor{}, st, Options{}, quiet); !errors.Is(err, band.ErrSessionExpired) || len(src.opened) != 0 {
+		t.Errorf("세션이 만료되면 바로 멈춰야 한다: %v, 열어 본 글 %v", err, src.opened)
 	}
 }
 

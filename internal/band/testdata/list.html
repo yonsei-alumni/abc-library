@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ko">
+<head><meta charset="utf-8"><title>밴드 게시글 목록 화면을 흉내 낸 테스트용 문서</title></head>
+<body>
+<div class="boardTagHeadBox _categoryHeader">
+  <div class="sortingMenu">
+    <button class="buttonSorting _btnSort">최신 댓글순</button>
+    <ul class="lyMenu"><ul><li><button class="_optionMenuLink">최신순</button></li><li><button class="_optionMenuLink">최신 댓글순</button></li></ul></ul>
+  </div>
+</div>
+<!-- 카드 밖의 게시글 링크(공지 등)는 읽지 않는다. -->
+<div class="noticeArea"><a href="https://band.us/band/1/post/99">공지</a></div>
+<article class="cContentsCard _postMainWrap">
+  <div><div class="_postAuthorRegion"><div class="postWriter uFlexItem">
+    <div class="postWriterInfoWrap"><span class="ellipsis"><a class="text" href="https://band.us/band/1/post/30">가상회원</a><span class="memo">가상학과 99</span></span>
+      <div class="postListInfoWrap"><time class="time">2시간 전</time></div></div>
+  </div></div>
+  <div class="postMain"><div class="postBody"><p class="txtBody">다른 글 <a href="https://band.us/band/1/post/7">https://band.us/band/1/post/7</a></p></div></div></div>
+  <div class="dPostCountView"><div class="postCount"><div class="postCountLeft"><span class="faceComment">
+    <button class="uEmotionView _emotionCountView"><span class="count">9</span></button>
+    <button class="comment _commentCountBtn">댓글<span class="count">2</span></button>
+  </span></div></div></div>
+  <div class="dPostCommentMainView"><div class="cComment"><div class="writeInfo"><strong class="name">댓글회원</strong></div>
+    <div class="commentBody"><p class="txt">미리보기 댓글</p><div class="func"><time class="time" title="2026년 10월 24일 오후 9:17">1시간 전</time></div></div></div></div>
+</article>
+<article class="cContentsCard _postMainWrap">
+  <div><div class="postWriterInfoWrap"><span class="ellipsis"><a class="text" href="https://band.us/band/1/post/12">가상회원</a></span></div></div>
+  <div class="dPostCountView"><div class="postCount"><div class="postCountLeft"><span class="faceComment">
+    <button class="comment _commentCountBtn">댓글<span class="count">1,024</span></button>
+  </span></div></div></div>
+</article>
+<!-- 댓글이 없는 글에는 댓글 수가 나오지 않는다. -->
+<article class="cContentsCard _postMainWrap">
+  <div><div class="postWriterInfoWrap"><span class="ellipsis"><a class="text" href="https://band.us/band/1/post/5">가상회원</a></span></div></div>
+  <div class="dPostCountView"><div class="postCount"><div class="postCountLeft"><span class="faceComment">
+    <button class="uEmotionView _emotionCountView"><span class="count">3</span></button>
+  </span></div></div></div>
+</article>
+<!-- 다른 밴드에서 공유한 글은 이 밴드의 글이 아니다. -->
+<article class="cContentsCard _postMainWrap">
+  <div><div class="postWriterInfoWrap"><span class="ellipsis"><a class="text" href="https://band.us/band/2/post/40">다른회원</a></span></div></div>
+  <div class="dPostCountView"><button class="comment _commentCountBtn">댓글<span class="count">4</span></button></div>
+</article>
+</body>
+</html>

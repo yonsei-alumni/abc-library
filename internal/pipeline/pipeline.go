@@ -1,5 +1,5 @@
 // Package pipeline은 일일 배치의 흐름이다.
-// 밴드에서 새 글, 지난번에 처리하지 못한 글, 최근 글을 읽고, 내용이 바뀐 글만 Claude로 추출해서 저장한다.
+// 밴드에서 새 글, 지난번에 처리하지 못한 글, 새 댓글이 달린 글, 최근 글을 읽고, 내용이 바뀐 글만 Claude로 추출해서 저장한다.
 package pipeline
 
 import (
@@ -21,6 +21,7 @@ import (
 // Source는 밴드 게시글을 읽는다. *band.Crawler가 구현한다.
 type Source interface {
 	LatestPostNo() (int, error)
+	RecentlyCommented(done func(band.Activity) bool, limit int) ([]band.Activity, error)
 	Post(no int) (band.Post, error)
 }
 
@@ -34,6 +35,8 @@ type Store interface {
 	LastPostNo(ctx context.Context) (int, error)
 	PostHash(ctx context.Context, no int) (string, bool, error)
 	PostNosSince(ctx context.Context, since time.Time) ([]int, error)
+	CommentCounts(ctx context.Context) (map[int]int, error)
+	SetCommentCount(ctx context.Context, no, count int) error
 	SavePost(ctx context.Context, p book.Post, findings []book.Finding) error
 	StartRun(ctx context.Context) (int64, error)
 	FinishRun(ctx context.Context, run store.Run) error
@@ -44,11 +47,15 @@ type Store interface {
 // MaxAttempts는 처리하지 못한 글을 다시 시도하는 최대 횟수다.
 const MaxAttempts = 5
 
+// MaxCommentCards는 새 댓글을 찾으려고 '최신 댓글순' 목록에서 읽는 카드 수의 상한이다.
+// 댓글 수를 저장하기 전에 저장한 글이 많은 첫 실행에서만 이 상한에 닿는다.
+const MaxCommentCards = 50
+
 // Options는 배치 한 번의 범위다.
 type Options struct {
 	// Limit는 한 번에 Claude로 추출할 게시글 수의 상한이다. 0이면 제한하지 않는다.
 	Limit int
-	// RecheckDays는 수정된 본문과 새 댓글을 다시 확인할 최근 게시글의 기간이다.
+	// RecheckDays는 수정된 본문과 댓글을 다시 확인할 최근 게시글의 기간이다. 새 댓글은 기간과 상관없이 댓글 수로 찾는다.
 	RecheckDays int
 	// RedoFrom이 0보다 크면 이 번호부터는 이미 저장한 글도 내용이 같든 다르든 다시 추출한다. 프롬프트를 바꾼 뒤에 쓴다.
 	RedoFrom int
@@ -68,7 +75,7 @@ type Report struct {
 	Checked, Extracted, Unchanged, Missing, Failed, Books int
 }
 
-// Run은 새 글, 다시 시도할 글, 최근 글을 처리하고 실행 기록을 남긴다.
+// Run은 새 글, 다시 시도할 글, 새 댓글이 달린 글, 최근 글을 처리하고 실행 기록을 남긴다.
 // 세션이 만료되면 바로 멈추고, 처리에 실패한 글이 있으면 오류를 돌려준다. 실패한 글은 다음 실행에서 다시 시도한다.
 func Run(ctx context.Context, src Source, ex Extractor, st Store, opts Options, log *slog.Logger) (r Report, err error) {
 	id, err := st.StartRun(ctx)
@@ -111,6 +118,17 @@ func process(ctx context.Context, src Source, ex Extractor, st Store, opts Optio
 	if err != nil {
 		return err
 	}
+	counts, err := st.CommentCounts(ctx)
+	if err != nil {
+		return err
+	}
+	// 새 댓글을 찾지 못해도 다른 글은 처리하고, 실행은 실패로 남겨서 알림을 받는다.
+	commented, commentErr := commentedPosts(src, counts, log)
+	if errors.Is(commentErr, band.ErrSessionExpired) {
+		return commentErr
+	} else if commentErr != nil {
+		log.Error("새 댓글이 달린 글을 찾지 못했다", "오류", commentErr)
+	}
 	var targets []int
 	queued := map[int]bool{}
 	add := func(no int) {
@@ -130,13 +148,17 @@ func process(ctx context.Context, src Source, ex Extractor, st Store, opts Optio
 	for _, no := range pending {
 		add(no)
 	}
+	for _, no := range commented {
+		add(no)
+	}
 	for _, no := range recent {
 		add(no)
 	}
 	for no := r.LastPostNo + 1; no <= r.LatestPostNo; no++ {
 		add(no)
 	}
-	log.Info("배치 시작", "저장된 마지막 글", r.LastPostNo, "밴드 최신 글", r.LatestPostNo, "다시 시도할 글", len(pending), "확인할 글", len(targets))
+	log.Info("배치 시작", "저장된 마지막 글", r.LastPostNo, "밴드 최신 글", r.LatestPostNo, "다시 시도할 글", len(pending),
+		"새 댓글이 달린 글", len(commented), "확인할 글", len(targets))
 
 	markPending := func(no int, reason string, cause error) {
 		msg := ""
@@ -181,6 +203,12 @@ func process(ctx context.Context, src Source, ex Extractor, st Store, opts Optio
 			return err
 		} else if ok && old == hash && !opts.redo(no) {
 			r.Unchanged++
+			// 스티커처럼 내용에 들어가지 않는 댓글만 달렸어도 댓글 수는 맞춰 둬야 다음 실행에서 다시 읽지 않는다.
+			if counts[no] != post.CommentCount {
+				if err := st.SetCommentCount(ctx, no, post.CommentCount); err != nil {
+					return err
+				}
+			}
 			continue
 		}
 
@@ -193,7 +221,7 @@ func process(ctx context.Context, src Source, ex Extractor, st Store, opts Optio
 			fail(no, "책을 추출하지 못했다", err)
 			continue
 		}
-		if err := st.SavePost(ctx, book.Post{No: no, PostedAt: post.PostedAt, ContentHash: hash}, findings); err != nil {
+		if err := st.SavePost(ctx, book.Post{No: no, PostedAt: post.PostedAt, ContentHash: hash, CommentCount: post.CommentCount}, findings); err != nil {
 			fail(no, "저장하지 못했다", err)
 			continue
 		}
@@ -202,10 +230,37 @@ func process(ctx context.Context, src Source, ex Extractor, st Store, opts Optio
 		log.Info("게시글 처리", "글", no, "책", len(findings))
 	}
 	log.Info("배치 끝", "확인", r.Checked, "추출", r.Extracted, "변경 없음", r.Unchanged, "없는 글", r.Missing, "실패", r.Failed, "책", r.Books)
+	var errs []error
 	if r.Failed > 0 {
-		return fmt.Errorf("게시글 %d개를 처리하지 못했습니다. 다음 실행에서 다시 시도합니다", r.Failed)
+		errs = append(errs, fmt.Errorf("게시글 %d개를 처리하지 못했습니다. 다음 실행에서 다시 시도합니다", r.Failed))
 	}
-	return nil
+	if commentErr != nil {
+		errs = append(errs, fmt.Errorf("새 댓글이 달린 글을 찾지 못했습니다: %w", commentErr))
+	}
+	return errors.Join(errs...)
+}
+
+// commentedPosts는 저장한 뒤에 댓글 수가 바뀐 글이다. 게시 시각과 상관없이 오래된 글에 달린 댓글도 찾는다.
+// 밴드의 '최신 댓글순' 목록은 최근 댓글 시각의 역순이고 댓글이 있는 글만 싣는다. 저장한 댓글 수와 같은 글이 나오면
+// 그 아래 글은 댓글이 더 오래전에 달렸으므로 읽지 않는다. 저장한 적 없는 글은 새 글이나 다시 시도할 글로 처리한다.
+func commentedPosts(src Source, counts map[int]int, log *slog.Logger) ([]int, error) {
+	cards, err := src.RecentlyCommented(func(a band.Activity) bool {
+		c, ok := counts[a.No]
+		return ok && c == a.Comments
+	}, MaxCommentCards)
+	if err != nil {
+		return nil, err
+	}
+	if len(cards) >= MaxCommentCards {
+		log.Warn("댓글 수를 확인할 카드 상한에 닿아서 그 아래 글은 확인하지 않았다", "상한", MaxCommentCards)
+	}
+	var nos []int
+	for _, a := range cards {
+		if c, ok := counts[a.No]; ok && c != a.Comments {
+			nos = append(nos, a.No)
+		}
+	}
+	return nos, nil
 }
 
 // ContentHash는 게시글 내용(본문, 링크, 사진, 댓글)이 바뀌었는지 알기 위한 해시다.

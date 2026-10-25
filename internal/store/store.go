@@ -138,6 +138,8 @@ type postRow struct {
 	PostedAt    time.Time `bun:",notnull"`
 	ContentHash string    `bun:",notnull"`
 	ProcessedAt time.Time `bun:",notnull"`
+	// CommentCount가 nil이면 댓글 수를 저장하기 전에 저장한 글이다.
+	CommentCount *int
 }
 
 type bookRow struct {
@@ -225,17 +227,40 @@ func (s *Store) PostNosSince(ctx context.Context, since time.Time) ([]int, error
 	return nos, err
 }
 
+// CommentCounts는 저장된 게시글마다 저장해 둔 댓글 수다. 댓글 수를 모르는 글은 -1이다.
+func (s *Store) CommentCounts(ctx context.Context) (map[int]int, error) {
+	var rows []struct {
+		BandPostNo   int
+		CommentCount int
+	}
+	err := s.db.NewSelect().Model((*postRow)(nil)).Column("band_post_no").
+		ColumnExpr("coalesce(comment_count, -1) AS comment_count").Scan(ctx, &rows)
+	counts := make(map[int]int, len(rows))
+	for _, r := range rows {
+		counts[r.BandPostNo] = r.CommentCount
+	}
+	return counts, err
+}
+
+// SetCommentCount는 다시 읽었지만 내용이 그대로인 글의 댓글 수를 고친다.
+func (s *Store) SetCommentCount(ctx context.Context, no, count int) error {
+	_, err := s.db.NewUpdate().Model((*postRow)(nil)).Set("comment_count = ?", count).
+		Where("band_post_no = ?", no).Exec(ctx)
+	return err
+}
+
 // SavePost는 게시글과 그 글(본문과 댓글)에서 찾은 책을 저장한다.
 // 같은 글을 다시 저장하면 그 글의 언급을 새 결과로 바꾼다. 관리자가 고치거나 지운 언급은 그대로 두고,
 // 같은 본문이나 댓글에서 같은 책에 대한 새 언급은 더하지 않는다.
 func (s *Store) SavePost(ctx context.Context, p book.Post, findings []book.Finding) error {
 	return s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		row := &postRow{BandPostNo: p.No, PostedAt: p.PostedAt, ContentHash: p.ContentHash, ProcessedAt: time.Now()}
+		row := &postRow{BandPostNo: p.No, PostedAt: p.PostedAt, ContentHash: p.ContentHash, ProcessedAt: time.Now(), CommentCount: &p.CommentCount}
 		_, err := tx.NewInsert().Model(row).
 			On("CONFLICT (band_post_no) DO UPDATE").
 			Set("posted_at = EXCLUDED.posted_at").
 			Set("content_hash = EXCLUDED.content_hash").
 			Set("processed_at = EXCLUDED.processed_at").
+			Set("comment_count = EXCLUDED.comment_count").
 			Returning("id").Exec(ctx)
 		if err != nil {
 			return fmt.Errorf("게시글 %d 저장: %w", p.No, err)

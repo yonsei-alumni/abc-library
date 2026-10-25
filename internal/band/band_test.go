@@ -3,6 +3,7 @@ package band
 import (
 	"encoding/json"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -49,34 +50,58 @@ func TestPostURL(t *testing.T) {
 	}
 }
 
-// TestExtractScript는 밴드 게시글 화면을 흉내 낸 HTML에서 추출 스크립트를 실행한다.
+// evaluate는 testdata의 HTML을 브라우저에 띄우고 스크립트를 실행한다.
 // Chromium이 설치되어 있지 않으면 건너뛴다(make band-login이 설치한다).
-func TestExtractScript(t *testing.T) {
+func evaluate(t *testing.T, file, script string, args ...any) any {
+	t.Helper()
 	pw, err := playwright.Run(&playwright.RunOptions{Verbose: false})
 	if err != nil {
 		t.Skip("Playwright 드라이버가 없다:", err)
 	}
-	defer func() { _ = pw.Stop() }()
+	t.Cleanup(func() { _ = pw.Stop() })
 	browser, err := pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{Headless: playwright.Bool(true)})
 	if err != nil {
 		t.Skip("Chromium이 없다:", err)
 	}
-	defer func() { _ = browser.Close() }()
+	t.Cleanup(func() { _ = browser.Close() })
 	page, err := browser.NewPage()
 	if err != nil {
 		t.Fatal(err)
 	}
-	html, err := os.ReadFile("testdata/post.html")
+	html, err := os.ReadFile(file)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := page.SetContent(string(html)); err != nil {
 		t.Fatal(err)
 	}
-	v, err := page.Evaluate(extractScript)
+	v, err := page.Evaluate(script, args...)
 	if err != nil {
 		t.Fatal(err)
 	}
+	return v
+}
+
+// TestCardsScript는 게시글 목록 화면을 흉내 낸 HTML에서 카드의 글 번호와 댓글 수를 읽는다.
+func TestCardsScript(t *testing.T) {
+	v := evaluate(t, "testdata/list.html", cardsScript, "1")
+	var cards []Activity
+	if err := json.Unmarshal([]byte(raw(v)), &cards); err != nil {
+		t.Fatal(err)
+	}
+	// 카드 밖의 링크, 본문 속 다른 글 링크, 다른 밴드의 글은 빼고, 표정 수를 댓글 수로 읽지 않는다.
+	want := []Activity{{No: 30, Comments: 2}, {No: 12, Comments: 1024}, {No: 5, Comments: 0}}
+	if !slices.Equal(cards, want) {
+		t.Errorf("카드 = %+v, want %+v", cards, want)
+	}
+	if strings.Contains(raw(v), "회원") || strings.Contains(raw(v), "미리보기") {
+		t.Errorf("작성자와 댓글은 읽지 않아야 한다: %s", raw(v))
+	}
+}
+
+// TestExtractScript는 밴드 게시글 화면을 흉내 낸 HTML에서 추출 스크립트를 실행한다.
+func TestExtractScript(t *testing.T) {
+	v := evaluate(t, "testdata/post.html", extractScript)
 	var s scraped
 	if err := json.Unmarshal([]byte(v.(string)), &s); err != nil {
 		t.Fatal(err)
@@ -115,6 +140,10 @@ func TestExtractScript(t *testing.T) {
 		if strings.Contains(l.URL, "youtube") {
 			t.Error("댓글의 링크는 본문 링크에 섞이지 않아야 한다")
 		}
+	}
+	// 댓글 수는 화면에 나온 수를 읽는다. 글자가 없어서 뺀 댓글도 세고, 표정 수와 헷갈리지 않는다.
+	if s.CommentCount != 2 {
+		t.Errorf("댓글 수 = %d", s.CommentCount)
 	}
 }
 

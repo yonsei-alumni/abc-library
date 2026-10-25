@@ -301,3 +301,51 @@ func TestRunsAndPending(t *testing.T) {
 		t.Errorf("저장한 글은 지워야 한다: %v", nos)
 	}
 }
+
+func TestCommentCounts(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	for _, p := range []book.Post{
+		{No: 1, PostedAt: day(1), ContentHash: "h1", CommentCount: 3},
+		{No: 2, PostedAt: day(2), ContentHash: "h2"},
+		{No: 3, PostedAt: day(3), ContentHash: "h3", CommentCount: 1},
+	} {
+		if err := s.SavePost(ctx, p, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 댓글 수 컬럼을 더하기 전에 저장한 글은 댓글 수가 없다.
+	if _, err := s.db.ExecContext(ctx, "UPDATE posts SET comment_count = NULL WHERE band_post_no = 3"); err != nil {
+		t.Fatal(err)
+	}
+	counts, err := s.CommentCounts(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(counts) != 3 || counts[1] != 3 || counts[2] != 0 || counts[3] != -1 {
+		t.Errorf("댓글 수 = %v, 댓글이 없는 글은 0, 모르는 글은 -1이어야 한다", counts)
+	}
+
+	// 다시 저장하면 새 댓글 수로 바꾸고, 내용이 그대로인 글은 댓글 수만 고친다.
+	if err := s.SavePost(ctx, book.Post{No: 1, PostedAt: day(1), ContentHash: "h1b", CommentCount: 4}, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetCommentCount(ctx, 3, 2); err != nil {
+		t.Fatal(err)
+	}
+	// 저장하지 않은 글의 댓글 수는 고칠 것이 없다.
+	if err := s.SetCommentCount(ctx, 9, 5); err != nil {
+		t.Fatal(err)
+	}
+	counts, err = s.CommentCounts(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(counts) != 3 || counts[1] != 4 || counts[3] != 2 {
+		t.Errorf("고친 댓글 수 = %v", counts)
+	}
+	if hash, _, _ := s.PostHash(ctx, 3); hash != "h3" {
+		t.Errorf("댓글 수만 고쳐야 한다: 해시 %q", hash)
+	}
+}

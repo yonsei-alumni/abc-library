@@ -42,6 +42,8 @@ type Post struct {
 	Links    []book.Link
 	Images   []Image
 	Comments []Comment
+	// CommentCount는 화면에 나온 댓글 수다. 글자가 없어서 Comments에서 뺀 댓글과 답글도 센다.
+	CommentCount int
 }
 
 // Comment는 게시글의 댓글 하나다.
@@ -236,6 +238,83 @@ func (c *Crawler) LatestPostNo() (int, error) {
 	return n, nil
 }
 
+// Activity는 게시글 목록의 카드 하나에 나온 글 번호와 댓글 수다.
+type Activity struct {
+	No       int `json:"no"`
+	Comments int `json:"comments"`
+}
+
+// cardsScript는 게시글 목록에 그려진 카드마다 글 번호와 댓글 수를 읽는다. 댓글이 없는 글에는 댓글 수가 나오지 않는다.
+// 작성자 이름 링크가 게시글 주소를 가리키므로 주소만 읽고 이름은 읽지 않는다.
+const cardsScript = `bandNo => JSON.stringify([...document.querySelectorAll('article._postMainWrap')].map(card => {
+  const a = card.querySelector('.postWriterInfoWrap a[href*="/band/' + bandNo + '/post/"]');
+  const count = card.querySelector('.dPostCountView ._commentCountBtn .count');
+  return {
+    no: a ? Number((a.getAttribute('href').match(/\/post\/(\d+)/) || [])[1] || 0) : 0,
+    comments: count ? Number(count.textContent.replace(/\D/g, '')) : 0,
+  };
+}).filter(c => c.no > 0))`
+
+// RecentlyCommented는 게시글 목록을 '최신 댓글순'으로 바꾸고, 최근에 댓글이 달린 글부터 카드의 글 번호와 댓글 수를 읽는다.
+// 목록은 끝까지 내려야 다음 글을 불러오고 지나간 카드는 화면에서 지우므로, 조금씩 내리면서 그려진 카드를 모은다.
+// done이 참인 카드를 만나면 그때 그려진 카드까지만 모으고, 목록 끝에 닿거나 limit개를 모아도 멈춘다.
+// 정렬은 이 화면에서만 바뀌고 계정 설정에 저장되지 않는다.
+func (c *Crawler) RecentlyCommented(done func(Activity) bool, limit int) ([]Activity, error) {
+	if err := c.open(fmt.Sprintf("https://band.us/band/%s/post", c.BandNo)); err != nil {
+		return nil, err
+	}
+	wait := playwright.LocatorWaitForOptions{State: playwright.WaitForSelectorStateAttached, Timeout: playwright.Float(20000)}
+	sortButton := c.page.Locator("._btnSort").First()
+	if err := sortButton.WaitFor(wait); err != nil {
+		return nil, fmt.Errorf("게시글 목록의 정렬 버튼을 찾지 못했습니다: %w", err)
+	}
+	click := playwright.LocatorClickOptions{Timeout: playwright.Float(5000)}
+	if err := sortButton.Click(click); err != nil {
+		return nil, err
+	}
+	if err := c.page.Locator("button._optionMenuLink", playwright.PageLocatorOptions{HasText: "최신 댓글순"}).First().Click(click); err != nil {
+		return nil, fmt.Errorf("'최신 댓글순' 정렬을 고르지 못했습니다: %w", err)
+	}
+	if err := c.page.Locator("._btnSort", playwright.PageLocatorOptions{HasText: "최신 댓글순"}).First().WaitFor(wait); err != nil {
+		return nil, fmt.Errorf("정렬이 '최신 댓글순'으로 바뀌지 않았습니다: %w", err)
+	}
+	// 정렬 버튼은 바로 바뀌지만 목록은 새로 불러온 뒤에 다시 그린다.
+	time.Sleep(3 * time.Second)
+
+	var cards []Activity
+	seen := map[int]bool{}
+	for idle := 0; len(cards) < limit && idle < 5; {
+		v, err := c.page.Evaluate(cardsScript, c.BandNo)
+		if err != nil {
+			return nil, err
+		}
+		raw, _ := v.(string)
+		var drawn []Activity
+		if err := json.Unmarshal([]byte(raw), &drawn); err != nil {
+			return nil, fmt.Errorf("게시글 목록을 읽지 못했습니다: %w", err)
+		}
+		found := false
+		idle++
+		for _, a := range drawn {
+			if !seen[a.No] {
+				seen[a.No] = true
+				cards = append(cards, a)
+				found = found || done(a)
+				idle = 0
+			}
+		}
+		if found {
+			break
+		}
+		// 마지막 카드가 보이게 내리면 다음 글을 불러온다.
+		if err := c.page.Locator("article._postMainWrap").Last().ScrollIntoViewIfNeeded(); err != nil {
+			return nil, err
+		}
+		time.Sleep(1500 * time.Millisecond)
+	}
+	return cards[:min(len(cards), limit)], nil
+}
+
 // extractScript는 게시글 상세 화면에서 본문, 외부 링크, 첨부 사진, 게시 시각과 댓글을 읽는다.
 // 글과 댓글의 작성자 영역은 읽지 않는다.
 const extractScript = `() => {
@@ -271,9 +350,11 @@ const extractScript = `() => {
     const ctime = c.querySelector('.func time.time');
     return {text: ctext ? ctext.innerText.trim() : '', time: timeOf(ctime), links: linksIn(cbody)};
   }).filter(c => c.text || c.links.length);
+  // 댓글이 없는 글에는 댓글 수가 나오지 않는다.
+  const count = document.querySelector('.postWrap .dPostCountView ._commentCountBtn .count');
   return JSON.stringify({
     text: texts.join('\n\n'), links: linksIn(body), images: [...new Set(images)],
-    time: timeOf(time), comments,
+    time: timeOf(time), comments, commentCount: count ? Number(count.textContent.replace(/\D/g, '')) : 0,
   });
 }`
 
@@ -287,6 +368,7 @@ type scraped struct {
 		Time  string      `json:"time"`
 		Links []book.Link `json:"links"`
 	} `json:"comments"`
+	CommentCount int `json:"commentCount"`
 }
 
 var moreComments = regexp.MustCompile(`이전 댓글|댓글 더보기`)
@@ -339,7 +421,7 @@ func (c *Crawler) Post(no int) (Post, error) {
 	if err != nil {
 		return Post{}, fmt.Errorf("게시글 %d: %w", no, err)
 	}
-	p := Post{No: no, PostedAt: postedAt, Text: s.Text, Links: s.Links}
+	p := Post{No: no, PostedAt: postedAt, Text: s.Text, Links: s.Links, CommentCount: s.CommentCount}
 	for _, sc := range s.Comments {
 		at, err := ParseTime(sc.Time, time.Now())
 		if err != nil || at.Before(postedAt) {

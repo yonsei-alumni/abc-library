@@ -68,6 +68,8 @@ type Post struct {
 	No          int
 	PostedAt    time.Time
 	ContentHash string
+	// CommentCount는 밴드 화면에 나온 댓글 수다. 새 댓글이 달린 글을 찾는 데 쓴다.
+	CommentCount int
 }
 
 // Thread는 책 상세 화면에서 게시글 하나에 속한 언급의 묶음이다.

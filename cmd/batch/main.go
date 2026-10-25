@@ -2,7 +2,7 @@
 //
 //	batch migrate   DB 스키마를 최신으로 올린다.
 //	batch login     브라우저 창을 띄워 밴드에 로그인하고 세션을 저장한다.
-//	batch run       새 글, 지난번에 처리하지 못한 글, 최근 글을 처리한다.
+//	batch run       새 글, 지난번에 처리하지 못한 글, 새 댓글이 달린 글, 최근 글을 처리한다.
 //	batch status    최근 실행 기록과 다시 시도할 글을 보여 준다.
 //	batch seed      로컬 DB에 가상의 데모 데이터를 넣는다(make db-seed).
 package main
@@ -108,7 +108,7 @@ func login() error {
 func run(ctx context.Context, log *slog.Logger, args []string) error {
 	fs := flag.NewFlagSet("run", flag.ExitOnError)
 	limit := fs.Int("limit", 30, "한 번에 Claude로 추출할 게시글 수의 상한(0이면 제한 없음)")
-	recheckDays := fs.Int("recheck-days", 7, "수정된 본문과 새 댓글을 다시 확인할 최근 게시글의 기간(일)")
+	recheckDays := fs.Int("recheck-days", 7, "수정된 본문과 댓글을 다시 확인할 최근 게시글의 기간(일). 새 댓글은 기간과 상관없이 찾는다")
 	redoFrom := fs.Int("redo-from", 0, "이 번호부터는 이미 저장한 글도 다시 추출한다(프롬프트를 바꾼 뒤에 쓴다)")
 	redoPosts := fs.String("redo-posts", "", "이미 저장했어도 다시 추출할 글 번호를 쉼표로 나열한다(예: 175,184)")
 	_ = fs.Parse(args)
