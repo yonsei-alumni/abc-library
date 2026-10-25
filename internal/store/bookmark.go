@@ -117,7 +117,7 @@ func (s *Store) Category(ctx context.Context, userID, id int64) (book.Category, 
 	return cs[0], nil
 }
 
-// CategoryByCode는 공개 주소의 코드로 카테고리와 그 책을 사용자가 정한 순서로 돌려준다.
+// CategoryByCode는 공개 주소의 코드로 카테고리와 그 책을 사용자가 정한 북마크 순서로 돌려준다.
 // 공개하지 않은 카테고리도 돌려주므로 보여 줄지는 부르는 쪽이 정한다.
 func (s *Store) CategoryByCode(ctx context.Context, code string) (book.Category, []book.Book, error) {
 	cs, err := s.categories(ctx, `c.code = ?`, categoryOrder, code)
@@ -131,18 +131,20 @@ func (s *Store) CategoryByCode(ctx context.Context, code string) (book.Category,
 	return cs[0], books, err
 }
 
-// categoryBookOrder는 카테고리 안의 책(별칭 cb, b)을 사용자가 정한 순서로 늘어놓는다.
-// 순서가 같으면 최근에 넣은 책이 먼저 온다.
-const categoryBookOrder = `cb.position, cb.created_at DESC, b.id`
+// bookmarkOrder는 북마크(별칭 k)한 책(별칭 b)을 사용자가 정한 순서로 늘어놓는다.
+// 순서가 같으면 최근에 북마크한 책이 먼저 온다. 내 북마크와 모든 카테고리가 이 순서를 따른다.
+const bookmarkOrder = `k.position, k.created_at DESC, b.id`
 
-// CategoryBooks는 카테고리에 넣은 책을 사용자가 정한 순서로 돌려준다.
+// CategoryBooks는 카테고리에 넣은 책을 사용자가 정한 북마크 순서로 돌려준다.
 func (s *Store) CategoryBooks(ctx context.Context, categoryID int64) ([]book.Book, error) {
 	var views []bookView
 	err := s.db.NewRaw(`
 		SELECT `+bookColumns+`
-		FROM bookmark_category_books cb JOIN books b ON b.id = cb.book_id
+		FROM bookmark_category_books cb
+		JOIN bookmarks k ON k.user_id = cb.user_id AND k.book_id = cb.book_id
+		JOIN books b ON b.id = cb.book_id
 		WHERE cb.category_id = ? AND `+visibleBook+`
-		ORDER BY `+categoryBookOrder, categoryID).Scan(ctx, &views)
+		ORDER BY `+bookmarkOrder, categoryID).Scan(ctx, &views)
 	if err != nil {
 		return nil, err
 	}
@@ -258,7 +260,11 @@ func (s *Store) Bookmark(ctx context.Context, userID, bookID int64) (bool, []int
 // 다른 사용자의 카테고리 번호는 버린다. 책이 없으면 ErrNotFound다.
 func (s *Store) SetBookmark(ctx context.Context, userID, bookID int64, categoryIDs []int64) error {
 	return s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		_, err := tx.NewRaw(`INSERT INTO bookmarks (user_id, book_id) VALUES (?, ?) ON CONFLICT DO NOTHING`, userID, bookID).Exec(ctx)
+		// 새로 북마크한 책은 맨 앞에 둔다.
+		_, err := tx.NewRaw(`
+			INSERT INTO bookmarks (user_id, book_id, position)
+			VALUES (?, ?, (SELECT coalesce(min(position), 1) - 1 FROM bookmarks WHERE user_id = ?))
+			ON CONFLICT DO NOTHING`, userID, bookID, userID).Exec(ctx)
 		if isForeignKeyViolation(err) {
 			return ErrNotFound
 		}
@@ -275,40 +281,44 @@ func (s *Store) SetBookmark(ctx context.Context, userID, bookID int64, categoryI
 		if err != nil || len(categoryIDs) == 0 {
 			return err
 		}
-		// 새로 넣은 책은 카테고리의 맨 앞에 둔다.
 		_, err = tx.NewRaw(`
-			INSERT INTO bookmark_category_books (category_id, user_id, book_id, position)
-			SELECT c.id, c.user_id, ?, coalesce((SELECT min(position) FROM bookmark_category_books WHERE category_id = c.id), 1) - 1
-			FROM bookmark_categories c WHERE c.user_id = ? AND c.id IN (?)
+			INSERT INTO bookmark_category_books (category_id, user_id, book_id)
+			SELECT c.id, c.user_id, ? FROM bookmark_categories c WHERE c.user_id = ? AND c.id IN (?)
 			ON CONFLICT DO NOTHING`, bookID, userID, bun.List(categoryIDs)).Exec(ctx)
 		return err
 	})
 }
 
-// MoveCategoryBook은 사용자의 카테고리 안에서 책을 한 칸 앞(up)이나 뒤로 옮긴다. 이미 끝에 있으면 그대로 둔다.
-// 화면에 보이는 책의 순서를 1부터 다시 매긴다. 카테고리나 그 안의 책이 없으면 ErrNotFound다.
-func (s *Store) MoveCategoryBook(ctx context.Context, userID, categoryID, bookID int64, up bool) error {
+// ReorderBookmarks는 사용자의 북마크 순서를 bookIDs의 순서로 바꾼다. 화면에 보이는 북마크의 순서를 1부터 다시 매긴다.
+// 북마크하지 않은 책과 겹친 번호는 버리고, bookIDs에 없는 북마크는 원래 순서대로 뒤에 둔다.
+// 다른 화면에서 그사이 북마크를 더하거나 지웠어도 남은 순서를 지킨다.
+func (s *Store) ReorderBookmarks(ctx context.Context, userID int64, bookIDs []int64) error {
 	return s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
-		var ids []int64
+		var current []int64
 		err := tx.NewRaw(`
 			SELECT b.id
-			FROM bookmark_category_books cb JOIN books b ON b.id = cb.book_id
-			WHERE cb.category_id = ? AND cb.user_id = ? AND `+visibleBook+`
-			ORDER BY `+categoryBookOrder+`
-			FOR UPDATE OF cb`, categoryID, userID).Scan(ctx, &ids)
+			FROM bookmarks k JOIN books b ON b.id = k.book_id
+			WHERE k.user_id = ? AND `+visibleBook+`
+			ORDER BY `+bookmarkOrder+`
+			FOR UPDATE OF k`, userID).Scan(ctx, &current)
 		if err != nil {
 			return err
 		}
-		if !swapNeighbor(ids, bookID, up) {
-			if slices.Contains(ids, bookID) {
-				return nil
+		order := make([]int64, 0, len(current))
+		for _, id := range bookIDs {
+			if slices.Contains(current, id) && !slices.Contains(order, id) {
+				order = append(order, id)
 			}
-			return ErrNotFound
+		}
+		for _, id := range current {
+			if !slices.Contains(order, id) {
+				order = append(order, id)
+			}
 		}
 		_, err = tx.NewRaw(`
-			UPDATE bookmark_category_books cb SET position = o.pos
+			UPDATE bookmarks k SET position = o.pos
 			FROM unnest(?::bigint[]) WITH ORDINALITY AS o (book_id, pos)
-			WHERE cb.category_id = ? AND cb.book_id = o.book_id`, pgdialect.Array(ids), categoryID).Exec(ctx)
+			WHERE k.user_id = ? AND k.book_id = o.book_id`, pgdialect.Array(order), userID).Exec(ctx)
 		return err
 	})
 }
@@ -328,7 +338,7 @@ type bookmarkView struct {
 	Categories []int64   `bun:"categories,array"`
 }
 
-// Bookmarks는 사용자의 북마크를 북마크한 순서의 역순으로 돌려준다.
+// Bookmarks는 사용자의 북마크를 사용자가 정한 순서로 돌려준다.
 func (s *Store) Bookmarks(ctx context.Context, userID int64) ([]book.Bookmark, error) {
 	var views []bookmarkView
 	err := s.db.NewRaw(`
@@ -337,7 +347,7 @@ func (s *Store) Bookmarks(ctx context.Context, userID int64) ([]book.Bookmark, e
 		             WHERE cb.user_id = k.user_id AND cb.book_id = k.book_id ORDER BY cb.category_id) AS categories
 		FROM bookmarks k JOIN books b ON b.id = k.book_id
 		WHERE k.user_id = ? AND `+visibleBook+`
-		ORDER BY k.created_at DESC, b.id`, userID).Scan(ctx, &views)
+		ORDER BY `+bookmarkOrder, userID).Scan(ctx, &views)
 	if err != nil {
 		return nil, err
 	}

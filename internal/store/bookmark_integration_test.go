@@ -211,19 +211,31 @@ func titles(bs []book.Book) []string {
 	return ts
 }
 
-func TestMoveCategoryBook(t *testing.T) {
+func TestReorderBookmarks(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
-	books := saveBooks(t, s, "가", "나", "다")
+	books := saveBooks(t, s, "가", "나", "다", "라")
 	me, _ := s.UserID(ctx, "hash-me")
 	other, _ := s.UserID(ctx, "hash-other")
 	cat, _ := s.AddCategory(ctx, me, book.Category{Title: "모음"})
-	for _, id := range books {
+	for _, id := range books[:3] {
 		if err := s.SetBookmark(ctx, me, id, []int64{cat}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	order := func() []string {
+	marks := func() []string {
+		t.Helper()
+		ms, err := s.Bookmarks(ctx, me)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var ts []string
+		for _, m := range ms {
+			ts = append(ts, m.Book.Title)
+		}
+		return ts
+	}
+	inCategory := func() []string {
 		t.Helper()
 		bs, err := s.CategoryBooks(ctx, cat)
 		if err != nil {
@@ -231,52 +243,52 @@ func TestMoveCategoryBook(t *testing.T) {
 		}
 		return titles(bs)
 	}
-	// 새로 넣은 책이 맨 앞에 온다.
-	if got := order(); !slices.Equal(got, []string{"다", "나", "가"}) {
+	// 새로 북마크한 책이 맨 앞에 온다.
+	if got := marks(); !slices.Equal(got, []string{"다", "나", "가"}) {
 		t.Fatalf("처음 순서 = %v", got)
 	}
-	// [다 나 가]에서 가를 앞으로, 다를 뒤로 옮긴다.
-	if err := s.MoveCategoryBook(ctx, me, cat, books[0], true); err != nil {
+	if err := s.ReorderBookmarks(ctx, me, []int64{books[0], books[2], books[1]}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.MoveCategoryBook(ctx, me, cat, books[2], false); err != nil {
+	// 카테고리도 북마크 순서를 따른다.
+	if got, cat := marks(), inCategory(); !slices.Equal(got, []string{"가", "다", "나"}) || !slices.Equal(cat, got) {
+		t.Errorf("바꾼 순서 = %v, 카테고리 = %v", got, cat)
+	}
+	// 북마크하지 않은 책, 겹친 번호는 버리고, 빠진 북마크는 원래 순서대로 뒤에 둔다.
+	if err := s.ReorderBookmarks(ctx, me, []int64{books[1], books[3], 999999, books[1]}); err != nil {
 		t.Fatal(err)
 	}
-	if got := order(); !slices.Equal(got, []string{"가", "다", "나"}) {
-		t.Errorf("옮긴 순서 = %v", got)
+	if got := marks(); !slices.Equal(got, []string{"나", "가", "다"}) {
+		t.Errorf("일부만 보낸 순서 = %v", got)
 	}
-	// 맨 앞을 더 앞으로, 맨 뒤를 더 뒤로 옮기면 그대로 둔다.
-	if err := s.MoveCategoryBook(ctx, me, cat, books[0], true); err != nil {
+	// 새로 북마크한 책은 맨 앞에 오고, 카테고리를 다시 저장해도 순서는 그대로다.
+	if err := s.SetBookmark(ctx, me, books[3], nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.MoveCategoryBook(ctx, me, cat, books[1], false); err != nil {
+	if err := s.SetBookmark(ctx, me, books[0], []int64{cat}); err != nil {
 		t.Fatal(err)
 	}
-	if got := order(); !slices.Equal(got, []string{"가", "다", "나"}) {
-		t.Errorf("끝에서 옮긴 순서 = %v", got)
+	if got := marks(); !slices.Equal(got, []string{"라", "나", "가", "다"}) {
+		t.Errorf("더한 뒤 순서 = %v", got)
 	}
-	// 카테고리를 다시 저장해도 이미 넣은 책의 순서는 그대로다.
-	if err := s.SetBookmark(ctx, me, books[2], []int64{cat}); err != nil {
+	// 다른 사용자의 북마크 순서는 바뀌지 않는다.
+	if err := s.SetBookmark(ctx, other, books[0], nil); err != nil {
 		t.Fatal(err)
 	}
-	if got := order(); !slices.Equal(got, []string{"가", "다", "나"}) {
-		t.Errorf("다시 저장한 뒤 순서 = %v", got)
-	}
-	// 다른 사용자의 카테고리나 넣지 않은 책은 옮기지 못한다.
-	if err := s.MoveCategoryBook(ctx, other, cat, books[0], true); !errors.Is(err, ErrNotFound) {
-		t.Errorf("남의 카테고리 = %v", err)
-	}
-	if err := s.MoveCategoryBook(ctx, me, cat, 999999, true); !errors.Is(err, ErrNotFound) {
-		t.Errorf("없는 책 = %v", err)
-	}
-	// 관리자가 언급을 모두 지운 책은 건너뛰고 보이는 책끼리 옮긴다.
-	if err := s.DeleteBook(ctx, books[2]); err != nil {
+	if err := s.ReorderBookmarks(ctx, other, []int64{books[2], books[1]}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.MoveCategoryBook(ctx, me, cat, books[1], true); err != nil {
+	if got := marks(); !slices.Equal(got, []string{"라", "나", "가", "다"}) {
+		t.Errorf("다른 사용자가 바꾼 뒤 내 순서 = %v", got)
+	}
+	// 관리자가 언급을 모두 지운 책은 건너뛰고 보이는 책끼리 순서를 매긴다.
+	if err := s.DeleteBook(ctx, books[1]); err != nil {
 		t.Fatal(err)
 	}
-	if got := order(); !slices.Equal(got, []string{"나", "가"}) {
+	if err := s.ReorderBookmarks(ctx, me, []int64{books[2], books[3], books[0]}); err != nil {
+		t.Fatal(err)
+	}
+	if got := marks(); !slices.Equal(got, []string{"다", "라", "가"}) {
 		t.Errorf("숨긴 책을 건너뛴 순서 = %v", got)
 	}
 }

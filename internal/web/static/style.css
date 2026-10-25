@@ -212,8 +212,14 @@ main.wrap { padding-top: 28px; padding-bottom: 48px; min-height: 60vh; }
 .shared-books h2 { font-size: 1.1rem; margin: 0 0 14px; }
 .shared-list .count { margin-left: auto; }
 .footer-links { margin: 10px 0 0; }
-.card-order { display: flex; gap: 6px; margin-top: 6px; }
 .card { scroll-margin-top: 16px; }
+.sortable .card { position: relative; }
+.drag-handle { position: absolute; top: 6px; left: 6px; z-index: 1; width: 2em; height: 2em; padding: 0; font-size: 1rem; line-height: 1;
+  border-radius: 6px; border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: grab; touch-action: none; opacity: .9; }
+.drag-handle:hover, .drag-handle:focus-visible { border-color: var(--accent); color: var(--accent); opacity: 1; }
+.sortable .dragging { opacity: .45; }
+.sortable .dragging .drag-handle { cursor: grabbing; }
+body.sorting { user-select: none; -webkit-user-select: none; }
 .list-order { display: inline-flex; gap: 6px; margin-left: auto; }
 .category-list li { scroll-margin-top: 16px; }
 .policy { max-width: 760px; line-height: 1.7; }
