@@ -20,6 +20,15 @@ func tagNames(t *testing.T, s *Store) string {
 	return strings.Join(tags.Names(), ",")
 }
 
+func topicNames(t *testing.T, s *Store) string {
+	t.Helper()
+	tags, err := s.Tags(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.Join(tags.Topics(), ",")
+}
+
 func bookTags(t *testing.T, s *Store, id int64) string {
 	t.Helper()
 	b, _, err := s.Book(context.Background(), id)
@@ -53,22 +62,55 @@ func TestTagAdmin(t *testing.T) {
 	if got := tagNames(t, s); got != seeded {
 		t.Fatalf("처음 태그 = %s", got)
 	}
+	if got := topicNames(t, s); got != "AI,SF,과학" {
+		t.Fatalf("처음 모임 주제 = %s", got)
+	}
 
-	// 모임 주제는 맨 앞에, 갈래는 맨 뒤에 더한다.
-	if err := s.AddTag(ctx, book.Tag{Name: "기후", Kind: book.TopicTag}); err != nil {
+	// 모임 주제는 맨 앞에, 그 밖의 태그는 맨 뒤에 더한다.
+	if err := s.AddTag(ctx, book.Tag{Name: "기후", Topic: true}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.AddTag(ctx, book.Tag{Name: "요리", Kind: book.KindTag}); err != nil {
+	if err := s.AddTag(ctx, book.Tag{Name: "요리"}); err != nil {
 		t.Fatal(err)
 	}
 	if got := tagNames(t, s); got != "기후,"+seeded+",요리" {
 		t.Errorf("더한 뒤 = %s", got)
 	}
-	if err := s.AddTag(ctx, book.Tag{Name: "SF", Kind: book.KindTag}); !errors.Is(err, ErrConflict) {
+	if err := s.AddTag(ctx, book.Tag{Name: "SF"}); !errors.Is(err, ErrConflict) {
 		t.Errorf("같은 이름 = %v", err)
 	}
 
-	// 한 칸씩 옮기고, 끝에서는 그대로 둔다. 다른 갈래로 넘어가지 않는다.
+	// 모임 주제로 정하면 모임 주제의 맨 앞으로, 빼면 맨 뒤로 옮긴다. 이미 그렇게 정해져 있으면 그대로 둔다.
+	for _, set := range []struct {
+		name  string
+		topic bool
+	}{{"요리", true}, {"기후", false}, {"AI", true}, {"소설", false}} {
+		if err := s.SetTagTopic(ctx, set.name, set.topic); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := topicNames(t, s); got != "요리,AI,SF,과학" {
+		t.Errorf("모임 주제를 바꾼 뒤 모임 주제 = %s", got)
+	}
+	if got := tagNames(t, s); !strings.HasPrefix(got, "요리,AI,SF,과학,소설,") || !strings.HasSuffix(got, ",만화,기후") {
+		t.Errorf("모임 주제를 바꾼 뒤 = %s", got)
+	}
+	if err := s.SetTagTopic(ctx, "없는 태그", true); !errors.Is(err, ErrNotFound) {
+		t.Errorf("없는 태그를 모임 주제로 = %v", err)
+	}
+	for _, set := range []struct {
+		name  string
+		topic bool
+	}{{"요리", false}, {"기후", true}} {
+		if err := s.SetTagTopic(ctx, set.name, set.topic); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := tagNames(t, s); got != "기후,"+seeded+",요리" {
+		t.Errorf("되돌린 뒤 = %s", got)
+	}
+
+	// 한 칸씩 옮기고, 끝에서는 그대로 둔다. 모임 주제와 그 밖의 태그 사이를 넘어가지 않는다.
 	for _, mv := range []struct {
 		name string
 		up   bool

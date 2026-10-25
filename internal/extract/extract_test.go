@@ -19,13 +19,13 @@ import (
 
 // testTags는 처음 DB에 넣은 태그 목록과 같다.
 var testTags = func() book.TagList {
-	tags := book.TagList{{Name: "AI", Kind: book.TopicTag}, {Name: "SF", Kind: book.TopicTag}, {Name: "과학", Kind: book.TopicTag}}
+	tags := book.TagList{{Name: "AI", Topic: true}, {Name: "SF", Topic: true}, {Name: "과학", Topic: true}}
 	for _, name := range []string{
 		"소설", "추리·미스터리", "판타지", "시", "에세이",
 		"인문", "철학", "역사", "사회·정치", "경제·경영", "자기계발",
 		"기술·IT", "예술", "여행", "종교", "어린이·청소년", "만화",
 	} {
-		tags = append(tags, book.Tag{Name: name, Kind: book.KindTag})
+		tags = append(tags, book.Tag{Name: name})
 	}
 	return tags
 }()
@@ -272,7 +272,7 @@ func TestTagsDropScienceFromSF(t *testing.T) {
 
 func TestExtractUsesGivenTags(t *testing.T) {
 	// 관리 화면에서 더한 모임 주제가 프롬프트와 스키마에 들어가고, 목록에 없는 태그는 버린다.
-	tags := book.TagList{{Name: "기후", Kind: book.TopicTag}, {Name: "AI", Kind: book.TopicTag}, {Name: "인문", Kind: book.KindTag}}
+	tags := book.TagList{{Name: "기후", Topic: true}, {Name: "AI", Topic: true}, {Name: "인문"}}
 	final := m{"books": []m{found("무수면 사회", "", []string{"기후", "소설", "인문"}, "요약", nil)}}
 	api := &fakeAPI{responses: []string{message("end_turn", textBlock(final))}}
 	got, err := New(api, &fakeSearch{}, tags).Extract(context.Background(), input)

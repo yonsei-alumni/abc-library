@@ -26,7 +26,7 @@ var (
 )
 
 // defaultTags는 fakeStore의 태그 목록이다.
-var defaultTags = book.TagList{{Name: "AI", Kind: book.TopicTag}, {Name: "SF", Kind: book.TopicTag}, {Name: "소설", Kind: book.KindTag}}
+var defaultTags = book.TagList{{Name: "AI", Topic: true}, {Name: "SF", Topic: true}, {Name: "소설"}}
 
 type fakeStore struct {
 	filter  store.Filter
@@ -105,7 +105,11 @@ func (f *fakeStore) AuthorCounts(context.Context) ([]book.Count, error) {
 func (f *fakeStore) Tags(context.Context) (book.TagList, error) { return defaultTags, nil }
 
 func (f *fakeStore) AddTag(_ context.Context, t book.Tag) error {
-	return f.record("AddTag %s %s", t.Name, t.Kind)
+	return f.record("AddTag %s %v", t.Name, t.Topic)
+}
+
+func (f *fakeStore) SetTagTopic(_ context.Context, name string, topic bool) error {
+	return f.record("SetTagTopic %s %v", name, topic)
 }
 
 func (f *fakeStore) RenameTag(_ context.Context, old, name string) error {

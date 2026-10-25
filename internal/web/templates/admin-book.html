@@ -19,15 +19,12 @@
     <fieldset>
       <legend>태그</legend>
       {{if .Topics}}<p class="tag-options">{{range .Topics}}<label class="check"><input type="checkbox" name="tag" value="{{.Name}}" {{if .Checked}}checked{{end}}> #{{.Name}}</label>{{end}}</p>{{end}}
-      {{if .Kinds}}<p class="tag-options">{{range .Kinds}}<label class="check"><input type="checkbox" name="tag" value="{{.Name}}" {{if .Checked}}checked{{end}}> #{{.Name}}</label>{{end}}</p>{{end}}
+      {{if .Others}}<p class="tag-options">{{range .Others}}<label class="check"><input type="checkbox" name="tag" value="{{.Name}}" {{if .Checked}}checked{{end}}> #{{.Name}}</label>{{end}}</p>{{end}}
       <div class="admin-row">
         <input name="new_tag" value="{{.Form.NewTag}}" maxlength="20" placeholder="목록에 없는 태그" aria-label="새 태그 이름">
-        <select name="new_tag_kind" aria-label="새 태그 갈래">
-          <option value="kind" {{if ne .Form.NewTagKind "topic"}}selected{{end}}>책의 갈래 (맨 뒤에 더함)</option>
-          <option value="topic" {{if eq .Form.NewTagKind "topic"}}selected{{end}}>모임 주제 (맨 앞에 더함)</option>
-        </select>
+        <label class="check"><input type="checkbox" name="new_tag_topic" value="1" {{if .Form.NewTagTopic}}checked{{end}}> 모임 주제</label>
       </div>
-      <p class="hint">목록에 없는 태그는 이름을 적고 저장하면 태그 목록에 더하고 이 책에 붙입니다. 대소문자만 다른 태그가 있으면 그 태그를 붙입니다. <a href="/admin/tags">태그 목록 고치기</a></p>
+      <p class="hint">목록에 없는 태그는 이름을 적고 저장하면 태그 목록에 더하고 이 책에 붙입니다. 모임 주제는 목록의 맨 앞에, 그 밖의 태그는 맨 뒤에 더합니다. 대소문자만 다른 태그가 있으면 그 태그를 붙입니다. <a href="/admin/tags">태그 목록 고치기</a></p>
     </fieldset>
     <p class="hint">저장하면 배치가 이 책의 정보와 태그를 더는 바꾸지 않습니다. 예전 제목과 ISBN은 기억해서 다시 추출해도 이 책으로 모입니다.</p>
     <p><button class="button">저장</button></p>

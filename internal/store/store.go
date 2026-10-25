@@ -179,7 +179,7 @@ const bookColumns = `b.id, coalesce(b.isbn13, '') AS isbn13, b.title, b.authors,
 	ARRAY(SELECT t.tag FROM book_tags t JOIN tags g ON g.name = t.tag WHERE t.book_id = b.id ` + tagOrder + `) AS tags`
 
 // tagOrder는 tags 테이블(별칭 g)의 태그를 정해진 순서로 늘어놓는다.
-const tagOrder = `ORDER BY g.kind = 'topic' DESC, g.position, g.name`
+const tagOrder = `ORDER BY g.topic DESC, g.position, g.name`
 
 // visibleBook은 지우지 않은 언급이 있는 책(별칭 b)이다. 관리자가 언급을 모두 지운 책은 목록에서 뺀다.
 const visibleBook = `EXISTS (SELECT 1 FROM mentions m WHERE m.book_id = b.id AND NOT m.hidden)`

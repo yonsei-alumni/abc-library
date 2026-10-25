@@ -9,25 +9,12 @@ import (
 	"unicode/utf8"
 )
 
-// TagKind는 태그의 갈래다.
-type TagKind string
-
-const (
-	// TopicTag는 매달 모임에서 정한 주제다. 최근 주제가 먼저 온다.
-	TopicTag TagKind = "topic"
-	// KindTag는 소설, 인문, 역사 같은 책의 갈래다.
-	KindTag TagKind = "kind"
-)
-
-// Valid는 정해진 갈래(모임 주제나 책의 갈래)인지 알려 준다.
-func (k TagKind) Valid() bool {
-	return k == TopicTag || k == KindTag
-}
-
 // Tag는 책에 붙일 수 있는 태그다. 태그 목록은 DB의 tags 테이블에 있고 관리 화면에서 고친다.
 type Tag struct {
 	Name string
-	Kind TagKind
+	// Topic은 매달 모임에서 정한 주제인지다. 모임 주제는 최근 주제가 먼저 온다.
+	// 모임 주제가 아닌 태그는 소설, 인문, 역사 같은 책의 갈래다.
+	Topic bool
 }
 
 // TagList는 정해진 순서(모임 주제가 먼저, 그 안에서는 정한 순서)로 늘어놓은 태그 목록이다.
@@ -46,7 +33,7 @@ func (l TagList) Names() []string {
 func (l TagList) Topics() []string {
 	var names []string
 	for _, t := range l {
-		if t.Kind == TopicTag {
+		if t.Topic {
 			names = append(names, t.Name)
 		}
 	}
@@ -70,7 +57,7 @@ func (l TagList) Same(name string) (string, bool) {
 
 // IsTopic은 그 이름의 태그가 모임 주제인지 알려 준다.
 func (l TagList) IsTopic(name string) bool {
-	return slices.ContainsFunc(l, func(t Tag) bool { return t.Name == name && t.Kind == TopicTag })
+	return slices.ContainsFunc(l, func(t Tag) bool { return t.Name == name && t.Topic })
 }
 
 // maxTagName은 태그 이름의 최대 글자 수다.

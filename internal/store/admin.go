@@ -26,27 +26,38 @@ func (e *DuplicateError) Error() string {
 // Tags는 태그 목록을 정해진 순서(모임 주제가 먼저)로 돌려준다.
 func (s *Store) Tags(ctx context.Context) (book.TagList, error) {
 	var rows []tagRow
-	err := s.db.NewRaw(`SELECT g.name, g.kind FROM tags g `+tagOrder).Scan(ctx, &rows)
+	err := s.db.NewRaw(`SELECT g.name, g.topic FROM tags g `+tagOrder).Scan(ctx, &rows)
 	return convert(rows, tagRow.toTag), err
 }
 
 type tagRow struct {
-	Name string       `bun:"name"`
-	Kind book.TagKind `bun:"kind"`
+	Name  string `bun:"name"`
+	Topic bool   `bun:"topic"`
 }
 
 func (r tagRow) toTag() book.Tag {
-	return book.Tag{Name: r.Name, Kind: r.Kind}
+	return book.Tag{Name: r.Name, Topic: r.Topic}
 }
 
-// AddTag는 태그를 더한다. 모임 주제는 맨 앞에, 갈래는 맨 뒤에 둔다. 같은 이름이 있으면 ErrConflict다.
+// tagPosition은 모임 주제(topic)면 모임 주제의 맨 앞, 아니면 그 밖의 태그의 맨 뒤 순서를 계산하는 식이다.
+// 인자는 topic을 두 번 받는다.
+const tagPosition = `(SELECT CASE WHEN ? THEN coalesce(min(position), 1) - 1 ELSE coalesce(max(position), 0) + 1 END
+	FROM tags WHERE topic = ?)`
+
+// AddTag는 태그를 더한다. 모임 주제는 맨 앞에, 그 밖의 태그는 맨 뒤에 둔다. 같은 이름이 있으면 ErrConflict다.
 func (s *Store) AddTag(ctx context.Context, t book.Tag) error {
 	res, err := s.db.NewRaw(`
-		INSERT INTO tags (name, kind, position)
-		SELECT ?, ?, CASE WHEN ? = 'topic' THEN coalesce(min(position), 1) - 1 ELSE coalesce(max(position), 0) + 1 END
-		FROM tags WHERE kind = ?
-		ON CONFLICT DO NOTHING`, t.Name, t.Kind, t.Kind, t.Kind).Exec(ctx)
+		INSERT INTO tags (name, topic, position) VALUES (?, ?, `+tagPosition+`)
+		ON CONFLICT DO NOTHING`, t.Name, t.Topic, t.Topic, t.Topic).Exec(ctx)
 	return conflictIfNone(res, err)
+}
+
+// SetTagTopic은 태그를 모임 주제로 정하거나 모임 주제에서 뺀다. 정하면 모임 주제의 맨 앞에, 빼면 그 밖의 태그의 맨 뒤에 둔다.
+// 이미 그렇게 정해져 있으면 순서를 그대로 둔다. 없는 태그면 ErrNotFound다.
+func (s *Store) SetTagTopic(ctx context.Context, name string, topic bool) error {
+	return notFoundIfNone(s.db.NewRaw(`
+		UPDATE tags SET topic = ?, position = CASE WHEN topic = ? THEN position ELSE `+tagPosition+` END
+		WHERE name = ?`, topic, topic, topic, topic, name).Exec(ctx))
 }
 
 // RenameTag는 태그 이름을 바꾼다. 책에 붙은 태그도 함께 바뀐다.
@@ -61,7 +72,8 @@ func (s *Store) RenameTag(ctx context.Context, old, name string) error {
 	return notFoundIfNone(res, err)
 }
 
-// MoveTag는 태그를 같은 갈래 안에서 한 칸 앞(up)이나 뒤로 옮긴다. 이미 끝에 있으면 그대로 둔다.
+// MoveTag는 태그를 한 칸 앞(up)이나 뒤로 옮긴다. 모임 주제는 모임 주제끼리, 그 밖의 태그는 그 밖의 태그끼리 옮긴다.
+// 이미 끝에 있으면 그대로 둔다.
 func (s *Store) MoveTag(ctx context.Context, name string, up bool) error {
 	return s.db.RunInTx(ctx, nil, func(ctx context.Context, tx bun.Tx) error {
 		type tagPos struct {
@@ -82,7 +94,7 @@ func (s *Store) MoveTag(ctx context.Context, name string, up bool) error {
 		var next []tagPos
 		err := tx.NewRaw(`
 			SELECT name, position FROM tags
-			WHERE kind = (SELECT kind FROM tags WHERE name = ?) AND (position, name) `+cmp+` (?, ?)
+			WHERE topic = (SELECT topic FROM tags WHERE name = ?) AND (position, name) `+cmp+` (?, ?)
 			ORDER BY position `+order+`, name `+order+` LIMIT 1 FOR UPDATE`, name, cur[0].Position, name).Scan(ctx, &next)
 		if err != nil || len(next) == 0 {
 			return err

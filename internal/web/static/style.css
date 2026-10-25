@@ -293,9 +293,10 @@ main.wrap { padding-top: 24px; padding-bottom: 48px; min-height: 60vh; }
 .admin-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
 .admin-cols input { width: 100%; }
 .admin-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0; }
-.admin-row input { flex: 1 1 140px; }
+.admin-row > input { flex: 1 1 140px; }
 .tag-options { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 6px 0; }
 .admin-form label.check { flex-direction: row; align-items: center; gap: 4px; font-weight: normal; font-size: 1rem; }
+.admin-row label.check, .admin-table label.check { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; cursor: pointer; }
 .inline { display: inline; margin: 0; }
 .button { font: inherit; font-size: .9375rem; font-weight: 600; padding: 7px 16px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: var(--card); cursor: pointer; text-decoration: none; display: inline-block; }
 .button:hover { filter: brightness(1.1); }

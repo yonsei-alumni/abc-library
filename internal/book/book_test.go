@@ -56,7 +56,7 @@ func TestThreadsGroupsMentionsByPost(t *testing.T) {
 }
 
 func TestTagList(t *testing.T) {
-	tags := TagList{{"AI", TopicTag}, {"SF", TopicTag}, {"소설", KindTag}}
+	tags := TagList{{"AI", true}, {"SF", true}, {"소설", false}}
 	if got := strings.Join(tags.Names(), ","); got != "AI,SF,소설" {
 		t.Errorf("Names = %s", got)
 	}
@@ -91,14 +91,6 @@ func TestCleanTagName(t *testing.T) {
 	for _, in := range []string{"", "  ", "#", "##", strings.Repeat("가", 21), "AI,SF", "C#", "줄\n바꿈"} {
 		if got, err := CleanTagName(in); err == nil {
 			t.Errorf("CleanTagName(%q) = %q, 오류여야 한다", in, got)
-		}
-	}
-}
-
-func TestTagKindValid(t *testing.T) {
-	for k, want := range map[TagKind]bool{TopicTag: true, KindTag: true, "": false, "Topic": false, "genre": false} {
-		if got := k.Valid(); got != want {
-			t.Errorf("TagKind(%q).Valid() = %v", k, got)
 		}
 	}
 }

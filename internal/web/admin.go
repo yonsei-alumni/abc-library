@@ -56,6 +56,7 @@ func (s *Server) adminRoutes(mux *http.ServeMux) {
 	})
 	admin("GET /admin/tags", func(w http.ResponseWriter, r *http.Request) { s.renderTags(w, r, http.StatusOK, "") })
 	admin("POST /admin/tags", s.addTag)
+	admin("POST /admin/tags/topic", s.setTagTopic)
 	admin("POST /admin/tags/rename", s.renameTag)
 	admin("POST /admin/tags/move", s.moveTag)
 	admin("POST /admin/tags/delete", s.deleteTag)
@@ -75,6 +76,8 @@ func (s *Server) adminRoutes(mux *http.ServeMux) {
 // notices는 고친 뒤 돌아온 화면에 보여 줄 안내다. 주소의 done 값으로 고른다.
 var notices = map[string]string{
 	"tag-added":       "태그를 더했습니다.",
+	"tag-topic-on":    "모임 주제로 정했습니다. 모임 주제의 맨 앞으로 옮겼습니다.",
+	"tag-topic-off":   "모임 주제에서 뺐습니다. 목록의 맨 뒤로 옮겼습니다.",
 	"tag-renamed":     "태그 이름을 바꿨습니다. 책에 붙은 태그도 함께 바뀌었습니다.",
 	"tag-moved":       "태그 순서를 바꿨습니다.",
 	"tag-deleted":     "태그를 지웠습니다. 책에 붙은 태그도 함께 빠졌습니다.",
@@ -117,19 +120,8 @@ func adminBookPath(id int64) string {
 
 type tagRow struct {
 	Name  string
+	Topic bool
 	Books int
-}
-
-type tagGroup struct {
-	Title string
-	Tags  []tagRow
-}
-
-func kindName(k book.TagKind) string {
-	if k == book.TopicTag {
-		return "모임 주제"
-	}
-	return "책의 갈래"
 }
 
 func (s *Server) renderTags(w http.ResponseWriter, r *http.Request, code int, errMsg string) {
@@ -147,16 +139,12 @@ func (s *Server) renderTags(w http.ResponseWriter, r *http.Request, code int, er
 	for _, c := range counts {
 		books[c.Name] = c.Books
 	}
-	groups := []tagGroup{{Title: kindName(book.TopicTag)}, {Title: kindName(book.KindTag)}}
-	for _, t := range tags {
-		i := 1
-		if t.Kind == book.TopicTag {
-			i = 0
-		}
-		groups[i].Tags = append(groups[i].Tags, tagRow{Name: t.Name, Books: books[t.Name]})
+	rows := make([]tagRow, len(tags))
+	for i, t := range tags {
+		rows[i] = tagRow{Name: t.Name, Topic: t.Topic, Books: books[t.Name]}
 	}
 	s.renderAdmin(w, r, code, "admin-tags", map[string]any{
-		"Title": "태그 관리", "AdminNav": "tags", "Groups": groups, "Error": errMsg,
+		"Title": "태그 관리", "AdminNav": "tags", "Tags": rows, "Error": errMsg,
 	})
 }
 
@@ -189,16 +177,20 @@ func (s *Server) addTag(w http.ResponseWriter, r *http.Request) {
 		s.renderTags(w, r, http.StatusBadRequest, err.Error()+".")
 		return
 	}
-	kind := book.TagKind(r.PostFormValue("kind"))
-	if !kind.Valid() {
-		s.renderTags(w, r, http.StatusBadRequest, "태그 갈래를 골라 주세요.")
-		return
+	s.tagAction(w, r, s.store.AddTag(r.Context(), book.Tag{Name: name, Topic: r.PostFormValue("topic") == "1"}), "tag-added")
+}
+
+func (s *Server) setTagTopic(w http.ResponseWriter, r *http.Request) {
+	topic := r.PostFormValue("topic") == "1"
+	notice := "tag-topic-off"
+	if topic {
+		notice = "tag-topic-on"
 	}
-	s.tagAction(w, r, s.store.AddTag(r.Context(), book.Tag{Name: name, Kind: kind}), "tag-added")
+	s.tagAction(w, r, s.store.SetTagTopic(r.Context(), r.PostFormValue("name"), topic), notice)
 }
 
 // ensureTag는 책 편집 화면에서 적은 태그가 목록에 없으면 더하고, 목록에 적힌 이름을 돌려준다.
-// 대소문자만 다른 태그가 이미 있으면 갈래와 상관없이 그 태그를 쓴다.
+// 대소문자만 다른 태그가 이미 있으면 모임 주제인지와 상관없이 그 태그를 쓴다.
 func (s *Server) ensureTag(r *http.Request, t book.Tag) (string, error) {
 	tags, err := s.store.Tags(r.Context())
 	if err != nil {
@@ -243,9 +235,9 @@ type bookForm struct {
 	Error   string
 	DupID   int64
 	MergeTo string
-	// NewTag와 NewTagKind는 태그 목록에 없어서 새로 더하며 붙일 태그의 이름과 갈래다.
-	NewTag     string
-	NewTagKind string
+	// NewTag와 NewTagTopic은 태그 목록에 없어서 새로 더하며 붙일 태그의 이름과 모임 주제인지다.
+	NewTag      string
+	NewTagTopic bool
 }
 
 func pathID(r *http.Request) (int64, bool) {
@@ -281,17 +273,17 @@ func (s *Server) renderBook(w http.ResponseWriter, r *http.Request, code int, f 
 	for _, t := range f.Book.Tags {
 		checked[t] = true
 	}
-	var topics, kinds []tagOption
+	var topics, others []tagOption
 	for _, t := range tags {
 		opt := tagOption{Name: t.Name, Checked: checked[t.Name]}
-		if t.Kind == book.TopicTag {
+		if t.Topic {
 			topics = append(topics, opt)
 		} else {
-			kinds = append(kinds, opt)
+			others = append(others, opt)
 		}
 	}
 	s.renderAdmin(w, r, code, "admin-book", map[string]any{
-		"Title": stored.Title + " 편집", "Stored": stored, "Form": f, "Topics": topics, "Kinds": kinds,
+		"Title": stored.Title + " 편집", "Stored": stored, "Form": f, "Topics": topics, "Others": others,
 		"Mentions": mentions, "Error": f.Error,
 	})
 }
@@ -321,7 +313,7 @@ func (s *Server) saveBook(w http.ResponseWriter, r *http.Request) {
 		KyoboPID:  strings.TrimSpace(r.PostFormValue("kyobo_pid")),
 		Tags:      r.PostForm["tag"],
 	}
-	f := bookForm{Book: b, NewTag: r.PostFormValue("new_tag"), NewTagKind: r.PostFormValue("new_tag_kind")}
+	f := bookForm{Book: b, NewTag: r.PostFormValue("new_tag"), NewTagTopic: r.PostFormValue("new_tag_topic") == "1"}
 	var newTag string
 	var tagErr error
 	if strings.TrimSpace(f.NewTag) != "" {
@@ -334,15 +326,13 @@ func (s *Server) saveBook(w http.ResponseWriter, r *http.Request) {
 		f.Error = "ISBN-13이 올바르지 않습니다. 978이나 979로 시작하는 13자리 숫자를 입력해 주세요."
 	case tagErr != nil:
 		f.Error = tagErr.Error() + "."
-	case newTag != "" && !book.TagKind(f.NewTagKind).Valid():
-		f.Error = "새 태그의 갈래를 골라 주세요."
 	}
 	if f.Error != "" {
 		s.renderBook(w, r, http.StatusBadRequest, f)
 		return
 	}
 	if newTag != "" {
-		name, err := s.ensureTag(r, book.Tag{Name: newTag, Kind: book.TagKind(f.NewTagKind)})
+		name, err := s.ensureTag(r, book.Tag{Name: newTag, Topic: f.NewTagTopic})
 		if err != nil {
 			s.fail(w, r, err)
 			return

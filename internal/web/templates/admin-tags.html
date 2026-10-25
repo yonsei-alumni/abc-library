@@ -8,26 +8,28 @@
   <h2>태그 더하기</h2>
   <form class="admin-row" method="post" action="/admin/tags">
     <input name="name" required maxlength="20" placeholder="태그 이름" aria-label="태그 이름">
-    <select name="kind" aria-label="태그 갈래">
-      <option value="topic">모임 주제 (맨 앞에 더함)</option>
-      <option value="kind" selected>책의 갈래 (맨 뒤에 더함)</option>
-    </select>
+    <label class="check"><input type="checkbox" name="topic" value="1"> 모임 주제</label>
     <button class="button">더하기</button>
   </form>
-  <p class="hint">배치는 이 목록에서만 태그를 고릅니다. 이미 저장한 글에도 새 태그를 붙이려면 <code>make batch ARGS=-redo-from=1</code>로 다시 추출합니다.</p>
+  <p class="hint">모임 주제는 맨 앞에, 그 밖의 태그는 맨 뒤에 더합니다. 배치는 이 목록에서만 태그를 고릅니다. 이미 저장한 글에도 새 태그를 붙이려면 <code>make batch ARGS=-redo-from=1</code>로 다시 추출합니다.</p>
 </section>
 
-{{range .Groups}}
 <section class="admin-section">
-  <h2>{{.Title}}</h2>
+  <h2>태그 {{len .Tags}}개</h2>
   {{if .Tags}}
   <table class="admin-table">
-    <thead><tr><th>태그</th><th class="num">책</th><th>순서</th><th>이름 바꾸기</th><th><span class="sr-only">지우기</span></th></tr></thead>
+    <thead><tr><th>태그</th><th class="num">책</th><th><span class="sr-only">모임 주제</span></th><th>순서</th><th>이름 바꾸기</th><th><span class="sr-only">지우기</span></th></tr></thead>
     <tbody>
     {{range .Tags}}
     <tr>
       <td><a href="/books?tag={{.Name}}">#{{.Name}}</a></td>
       <td class="num">{{.Books}}</td>
+      <td>
+        <form class="inline" method="post" action="/admin/tags/topic">
+          <input type="hidden" name="name" value="{{.Name}}">
+          <label class="check"><input type="checkbox" name="topic" value="1" {{if .Topic}}checked{{end}} onchange="this.form.requestSubmit()" aria-label="#{{.Name}} 모임 주제"> 모임 주제</label>
+        </form>
+      </td>
       <td class="nowrap">
         <form class="inline" method="post" action="/admin/tags/move"><input type="hidden" name="name" value="{{.Name}}"><input type="hidden" name="dir" value="up"><button class="icon-button" title="앞으로" aria-label="#{{.Name}} 앞으로">↑</button></form>
         <form class="inline" method="post" action="/admin/tags/move"><input type="hidden" name="name" value="{{.Name}}"><input type="hidden" name="dir" value="down"><button class="icon-button" title="뒤로" aria-label="#{{.Name}} 뒤로">↓</button></form>
@@ -49,10 +51,10 @@
     {{end}}
     </tbody>
   </table>
+  <p class="hint">모임 주제를 체크하면 모임 주제의 맨 앞으로, 체크를 풀면 맨 뒤로 옮깁니다. 순서는 모임 주제끼리, 그 밖의 태그끼리 바꿉니다. 모임 주제는 최근 주제를 앞에 둡니다.</p>
   {{else}}
   <p class="empty">태그가 없습니다.</p>
   {{end}}
 </section>
-{{end}}
 </div>
 {{end}}

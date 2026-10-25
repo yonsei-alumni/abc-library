@@ -304,26 +304,38 @@ func TestAdminTags(t *testing.T) {
 		t.Fatalf("code = %d", rec.Code)
 	}
 	body := rec.Body.String()
-	topics, kinds, _ := strings.Cut(body, "책의 갈래</h2>")
-	if !strings.Contains(topics, "#AI") || !strings.Contains(topics, "#SF") || strings.Contains(topics, "#소설") || !strings.Contains(kinds, "#소설") {
-		t.Error("모임 주제와 갈래를 나눠 보여야 한다")
+	// 모임 주제와 그 밖의 태그를 한 목록에 두고, 모임 주제인지는 체크 상자로 보인다.
+	if strings.Contains(body, "책의 갈래") || strings.Count(body, "<tbody>") != 1 {
+		t.Error("태그를 갈래로 나누지 않고 한 목록에 보여야 한다")
 	}
-	assertContains(t, body, `<td class="num">5</td>`, "태그 더하기")
+	for name, topic := range map[string]bool{"AI": true, "SF": true, "소설": false} {
+		_, row, _ := strings.Cut(body, ">#"+name+"</a>")
+		row, _, _ = strings.Cut(row, "</tr>")
+		if !strings.Contains(row, `action="/admin/tags/topic"`) || strings.Contains(row, `value="1" checked`) != topic {
+			t.Errorf("#%s의 모임 주제 체크 상자는 체크가 %v여야 한다", name, topic)
+		}
+	}
+	assertContains(t, body, `<td class="num">5</td>`, "태그 더하기", "태그 3개")
 
-	expectRedirect(t, a.post("/admin/tags", url.Values{"name": {" #기후 "}, "kind": {"topic"}}, admin), "/admin/tags?done=tag-added")
+	expectRedirect(t, a.post("/admin/tags", url.Values{"name": {" #기후 "}, "topic": {"1"}}, admin), "/admin/tags?done=tag-added")
+	expectRedirect(t, a.post("/admin/tags", url.Values{"name": {"요리"}}, admin), "/admin/tags?done=tag-added")
+	expectRedirect(t, a.post("/admin/tags/topic", url.Values{"name": {"소설"}, "topic": {"1"}}, admin), "/admin/tags?done=tag-topic-on")
+	expectRedirect(t, a.post("/admin/tags/topic", url.Values{"name": {"AI"}}, admin), "/admin/tags?done=tag-topic-off")
 	expectRedirect(t, a.post("/admin/tags/rename", url.Values{"name": {"SF"}, "new_name": {"공상과학"}}, admin), "/admin/tags?done=tag-renamed")
 	expectRedirect(t, a.post("/admin/tags/move", url.Values{"name": {"SF"}, "dir": {"up"}}, admin), "/admin/tags?done=tag-moved")
 	expectRedirect(t, a.post("/admin/tags/move", url.Values{"name": {"SF"}, "dir": {"down"}}, admin), "/admin/tags?done=tag-moved")
 	expectRedirect(t, a.post("/admin/tags/delete", url.Values{"name": {"SF"}}, admin), "/admin/tags?done=tag-deleted")
-	expectCalls(t, a.st, "AddTag 기후 topic", "RenameTag SF 공상과학", "MoveTag SF true", "MoveTag SF false", "DeleteTag SF")
+	expectCalls(t, a.st, "AddTag 기후 true", "AddTag 요리 false", "SetTagTopic 소설 true", "SetTagTopic AI false",
+		"RenameTag SF 공상과학", "MoveTag SF true", "MoveTag SF false", "DeleteTag SF")
 
 	assertContains(t, a.get("/admin/tags?done=tag-added", admin).Body.String(), "태그를 더했습니다.")
+	assertContains(t, a.get("/admin/tags?done=tag-topic-on", admin).Body.String(), "모임 주제로 정했습니다.")
 
 	// 잘못된 입력은 저장하지 않고 오류를 보인다.
 	for _, form := range []url.Values{
-		{"name": {""}, "kind": {"kind"}},
-		{"name": {strings.Repeat("가", 21)}, "kind": {"kind"}},
-		{"name": {"기후"}, "kind": {"genre"}},
+		{"name": {""}, "topic": {"1"}},
+		{"name": {"  #  "}},
+		{"name": {strings.Repeat("가", 21)}},
 	} {
 		if rec := a.post("/admin/tags", form, admin); rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "notice-error") {
 			t.Errorf("%v: code = %d", form, rec.Code)
@@ -335,13 +347,16 @@ func TestAdminTags(t *testing.T) {
 	expectCalls(t, a.st)
 
 	a.st.err = store.ErrConflict
-	rec = a.post("/admin/tags", url.Values{"name": {"SF"}, "kind": {"kind"}}, admin)
+	rec = a.post("/admin/tags", url.Values{"name": {"SF"}}, admin)
 	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "같은 이름의 태그가 이미 있습니다") {
 		t.Errorf("같은 이름 code = %d", rec.Code)
 	}
 	a.st.err = store.ErrNotFound
 	if rec := a.post("/admin/tags/delete", url.Values{"name": {"없는 태그"}}, admin); rec.Code != http.StatusNotFound {
 		t.Errorf("없는 태그 code = %d", rec.Code)
+	}
+	if rec := a.post("/admin/tags/topic", url.Values{"name": {"없는 태그"}, "topic": {"1"}}, admin); rec.Code != http.StatusNotFound {
+		t.Errorf("없는 태그를 모임 주제로 code = %d", rec.Code)
 	}
 	a.st.err = errors.New("DB 오류")
 	if rec := a.post("/admin/tags/delete", url.Values{"name": {"SF"}}, admin); rec.Code != http.StatusInternalServerError || strings.Contains(rec.Body.String(), "DB 오류") {
@@ -380,17 +395,18 @@ func TestAdminBook(t *testing.T) {
 	expectCalls(t, a.st, "UpdateBook 1")
 
 	// 목록에 없는 태그는 태그 목록에 더하면서 붙이고, 대소문자만 다른 태그가 있으면 그 태그를 붙인다.
-	assertContains(t, a.get("/admin/books/1", admin).Body.String(), `name="new_tag"`, `<option value="topic" >모임 주제`)
+	assertContains(t, a.get("/admin/books/1", admin).Body.String(), `name="new_tag"`, `name="new_tag_topic" value="1" >`)
 	for _, tc := range []struct {
-		name, kind string
-		calls      []string
-		tags       string
+		name, topic string
+		calls       []string
+		tags        string
 	}{
-		{" #기후 ", "topic", []string{"AddTag 기후 topic", "UpdateBook 1"}, "SF,AI,기후"},
-		{"sf", "kind", []string{"UpdateBook 1"}, "SF,AI"},
-		{"소설", "topic", []string{"UpdateBook 1"}, "SF,AI,소설"},
+		{" #기후 ", "1", []string{"AddTag 기후 true", "UpdateBook 1"}, "SF,AI,기후"},
+		{"요리", "", []string{"AddTag 요리 false", "UpdateBook 1"}, "SF,AI,요리"},
+		{"sf", "", []string{"UpdateBook 1"}, "SF,AI"},
+		{"소설", "1", []string{"UpdateBook 1"}, "SF,AI,소설"},
 	} {
-		withTag := url.Values{"new_tag": {tc.name}, "new_tag_kind": {tc.kind}}
+		withTag := url.Values{"new_tag": {tc.name}, "new_tag_topic": {tc.topic}}
 		for k, v := range form {
 			withTag[k] = v
 		}
@@ -402,9 +418,9 @@ func TestAdminBook(t *testing.T) {
 	}
 
 	for name, change := range map[string]func(url.Values){
-		"쉼표가 든 새 태그": func(f url.Values) { f.Set("new_tag", "가,나"); f.Set("new_tag_kind", "kind") },
-		"갈래 없는 새 태그": func(f url.Values) { f.Set("new_tag", "기후"); f.Set("new_tag_kind", "") },
-		"긴 새 태그":     func(f url.Values) { f.Set("new_tag", strings.Repeat("가", 21)); f.Set("new_tag_kind", "kind") },
+		"쉼표가 든 새 태그": func(f url.Values) { f.Set("new_tag", "가,나") },
+		"#만 쓴 새 태그":  func(f url.Values) { f.Set("new_tag", "#"); f.Set("new_tag_topic", "1") },
+		"긴 새 태그":     func(f url.Values) { f.Set("new_tag", strings.Repeat("가", 21)) },
 		"제목 없음":      func(f url.Values) { f.Set("title", " ") },
 		"틀린 ISBN":    func(f url.Values) { f.Set("isbn13", "9791196914807") },
 		"ISBN-10":    func(f url.Values) { f.Set("isbn13", "8937460440") },
@@ -420,6 +436,9 @@ func TestAdminBook(t *testing.T) {
 			t.Errorf("%s: code = %d", name, rec.Code)
 		}
 	}
+	// 오류를 보일 때 적은 새 태그와 모임 주제 체크를 남긴다.
+	withTopic := url.Values{"title": {" "}, "new_tag": {"기후"}, "new_tag_topic": {"1"}}
+	assertContains(t, a.post("/admin/books/1", withTopic, admin).Body.String(), `value="기후"`, `name="new_tag_topic" value="1" checked`)
 	expectCalls(t, a.st)
 
 	// 같은 책이 있으면 그 책으로 합치라고 안내하고 입력한 값을 남긴다.

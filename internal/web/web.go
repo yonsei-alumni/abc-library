@@ -42,6 +42,7 @@ type Store interface {
 	Tags(ctx context.Context) (book.TagList, error)
 
 	AddTag(ctx context.Context, t book.Tag) error
+	SetTagTopic(ctx context.Context, name string, topic bool) error
 	RenameTag(ctx context.Context, old, name string) error
 	MoveTag(ctx context.Context, name string, up bool) error
 	DeleteTag(ctx context.Context, name string) error
@@ -129,7 +130,6 @@ func New(st Store, cfg Config, log *slog.Logger) (*Server, error) {
 		"authors":  func(as []string) string { return strings.Join(as, ", ") },
 		"static":   staticURL,
 		"join":     strings.Join,
-		"kindName": kindName,
 		"excerpt":  excerpt,
 		"markdown": markdown,
 		"add":      func(a, b int) int { return a + b },
