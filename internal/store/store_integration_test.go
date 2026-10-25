@@ -116,17 +116,21 @@ func TestSavePostAndQueries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 1번 글의 본문과 댓글은 소식 하나로 묶인다.
-	if len(entries) != 2 || entries[0].PostNo != 2 || entries[0].IsNew || !entries[1].IsNew || !entries[1].PostedAt.Equal(day(1)) {
-		t.Errorf("타임라인 = %+v", entries)
+	// 1번 글의 댓글은 본문 다음 날 달렸으므로 본문과 따로 그날의 이야기 추가 소식이 된다.
+	if len(entries) != 3 || entries[0].PostNo != 2 || entries[0].IsNew ||
+		entries[1].PostNo != 1 || entries[1].IsNew || !entries[1].PostedAt.Equal(day(2)) ||
+		entries[2].PostNo != 1 || !entries[2].IsNew || !entries[2].PostedAt.Equal(day(1)) {
+		t.Fatalf("타임라인 = %+v", entries)
 	}
 	// 소식의 요약은 본문 언급이 있으면 그것을, 댓글만 있으면 첫 댓글 언급을 쓴다.
-	if len(entries) == 2 && (entries[0].Summary != "두 번째 글의 댓글" || entries[1].Summary != "본문 요약") {
-		t.Errorf("소식 요약 = %q, %q", entries[0].Summary, entries[1].Summary)
+	if entries[0].Summary != "두 번째 글의 댓글" || entries[1].Summary != "댓글 요약" || entries[2].Summary != "본문 요약" {
+		t.Errorf("소식 요약 = %q, %q, %q", entries[0].Summary, entries[1].Summary, entries[2].Summary)
 	}
 	// 소식마다 그 글에서 이 책을 다룬 댓글 수와 이 책의 모든 언급 수를 센다.
-	if len(entries) == 2 && (entries[0].Comments != 1 || entries[1].Comments != 1 || entries[0].Mentions != 3 || entries[1].Mentions != 3) {
-		t.Errorf("소식의 댓글 수와 언급 수 = %+v", entries)
+	for _, e := range entries {
+		if e.Comments != 1 || e.Mentions != 3 {
+			t.Errorf("소식의 댓글 수와 언급 수 = %+v", e)
+		}
 	}
 
 	if no, err := s.LastPostNo(ctx); err != nil || no != 2 {
@@ -150,6 +154,62 @@ func TestSavePostAndQueries(t *testing.T) {
 	}
 	if _, _, err := s.Book(ctx, b.ID); err != ErrNotFound {
 		t.Errorf("지워진 책은 ErrNotFound여야 한다: %v", err)
+	}
+}
+
+func TestTimelineGroupsMentionsBySeoulDay(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	seoul := time.FixedZone("KST", 9*60*60)
+	at := func(d, hour, minute int) time.Time { return time.Date(2026, 10, d, hour, minute, 0, 0, seoul) }
+
+	// 본문은 서울 시각으로 5일 0시 30분(UTC로는 4일)이고, 댓글은 5일 밤, 6일 0시 10분, 9일에 달렸다.
+	// 9일 댓글은 관리자가 지운다.
+	story := book.Book{ISBN13: "9791196914806", Title: "당신 인생의 이야기", Authors: []string{"테드 창"}}
+	if err := s.SavePost(ctx, book.Post{No: 1, PostedAt: at(5, 0, 30), ContentHash: "h"}, []book.Finding{{
+		Book: story,
+		Mentions: []book.Mention{
+			{Kind: book.InPost, At: at(5, 0, 30), Summary: "본문 요약"},
+			{Kind: book.InComment, At: at(5, 23, 30), Summary: "같은 날 댓글"},
+			{Kind: book.InComment, At: at(6, 0, 10), Summary: "다음 날 첫 댓글"},
+			{Kind: book.InComment, At: at(6, 21, 0), Summary: "다음 날 둘째 댓글"},
+			{Kind: book.InComment, At: at(9, 12, 0), Summary: "지운 댓글"},
+		},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	shelf, err := s.Books(ctx, Filter{}, 10, 0)
+	if err != nil || len(shelf) != 1 {
+		t.Fatalf("책은 한 권이어야 한다: %+v, %v", shelf, err)
+	}
+	_, mentions, err := s.Book(ctx, shelf[0].Book.ID)
+	if err != nil || len(mentions) != 5 {
+		t.Fatalf("언급 = %+v, %v", mentions, err)
+	}
+	if err := s.DeleteMention(ctx, mentions[4].ID); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := s.Timeline(ctx, 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 서울 날짜로 묶으므로 본문과 5일 밤 댓글이 하나, 6일 댓글 둘이 하나다. 지운 댓글은 소식이 되지 않는다.
+	if len(entries) != 2 {
+		t.Fatalf("소식은 두 개여야 한다: %+v", entries)
+	}
+	later, first := entries[0], entries[1]
+	if later.IsNew || !later.PostedAt.Equal(at(6, 0, 10)) || later.Summary != "다음 날 첫 댓글" || later.PostNo != 1 {
+		t.Errorf("다음 날 댓글 소식 = %+v", later)
+	}
+	if !first.IsNew || !first.PostedAt.Equal(at(5, 0, 30)) || first.Summary != "본문 요약" {
+		t.Errorf("첫 소식 = %+v", first)
+	}
+	// 댓글 수는 날짜와 상관없이 그 글에서 이 책을 다룬 지우지 않은 댓글 수다.
+	for _, e := range entries {
+		if e.Comments != 3 || e.Mentions != 4 {
+			t.Errorf("소식의 댓글 수와 언급 수 = %+v", e)
+		}
 	}
 }
 

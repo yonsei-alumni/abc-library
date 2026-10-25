@@ -426,7 +426,9 @@ func (r entryRow) toEntry() book.Entry {
 		Comments: r.Comments, Mentions: r.Mentions}
 }
 
-// Timeline은 최근 소식을 시각의 역순으로 돌려준다. 같은 글에서 같은 책을 여러 번 다뤘으면 소식 하나로 묶는다.
+// Timeline은 최근 소식을 시각의 역순으로 돌려준다. 같은 글에서 같은 날(서울 시각) 같은 책을 여러 번 다뤘으면
+// 소식 하나로 묶는다. 다른 날 달린 댓글은 그날의 소식으로 따로 싣는다.
+// 소식의 댓글 수는 날짜와 상관없이 그 글의 댓글 중 이 책을 다룬 수다.
 func (s *Store) Timeline(ctx context.Context, limit, offset int) ([]book.Entry, error) {
 	var rows []entryRow
 	err := s.db.NewRaw(`
@@ -436,9 +438,10 @@ func (s *Store) Timeline(ctx context.Context, limit, offset int) ([]book.Entry, 
 			       count(*) FILTER (WHERE m.kind = 'comment') AS comments, count(*) AS mentions
 			FROM mentions m JOIN posts p ON p.id = m.post_id
 			WHERE NOT m.hidden
-			GROUP BY m.book_id, p.band_post_no
+			GROUP BY m.book_id, p.band_post_no, (m.mentioned_at AT TIME ZONE 'Asia/Seoul')::date
 		)
-		SELECT `+bookColumns+`, n.band_post_no, n.posted_at, n.summary, n.comments,
+		SELECT `+bookColumns+`, n.band_post_no, n.posted_at, n.summary,
+		       (sum(n.comments) OVER (PARTITION BY n.book_id, n.band_post_no))::int AS comments,
 		       (sum(n.mentions) OVER (PARTITION BY n.book_id))::int AS book_mentions,
 		       n.posted_at = min(n.posted_at) OVER (PARTITION BY n.book_id) AS is_new
 		FROM news n JOIN books b ON b.id = n.book_id
