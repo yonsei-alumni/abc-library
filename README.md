@@ -25,7 +25,8 @@ make db-reset           # 로컬 DB를 지우고 데모 데이터로 다시 시�
 `.envrc.example`을 `.envrc`로 복사해서 운영 값을 채운 뒤 실행한다. 이 명령들은 `.envrc`의 운영 DB를 쓴다.
 
 ```bash
-make migrate      # 운영 DB 스키마 적용(스키마를 바꾼 코드를 release에 merge하기 전에)
+make release      # main을 release로 옮겨서 배포(마이그레이션이 바뀌었으면 운영 DB에 먼저 적용)
+make migrate      # 운영 DB 스키마 적용(make release를 쓰지 않고 release에 merge할 때)
 make band-login   # 밴드에 직접 로그인해서 세션 저장
 make batch        # 밴드 글 수집과 책 추출
 make status       # 최근 배치 실행 기록

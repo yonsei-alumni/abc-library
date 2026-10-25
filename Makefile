@@ -1,7 +1,7 @@
 .PHONY: fmt lint test check ci test-integration \
 	db-up db-seed db-psql db-down db-reset web batch-local \
 	web-prod migrate band-login batch status \
-	gcp-setup gcp-schedule band-secret deploy-web deploy-batch firebase-hosting
+	gcp-setup gcp-schedule band-secret deploy-web deploy-batch firebase-hosting release
 
 # 로컬 PostgreSQL(compose.yaml의 db) 연결. 이 컴퓨터에서만 쓰는 개발용 값이라 비밀이 아니다.
 # .envrc의 DB_URL은 운영 DB(Neon)를 가리키고 배포 스크립트도 그 값을 쓰므로, 로컬 DB는 명령마다 이 값으로 바꿔 쓴다.
@@ -60,7 +60,7 @@ batch-local: db-up
 web-prod:
 	go run ./cmd/web
 
-# 스키마를 바꾼 코드를 push하기 전에 운영 DB에 먼저 적용한다.
+# 스키마를 바꾼 코드를 release에 올리기 전에 운영 DB에 먼저 적용한다. make release가 필요할 때 대신 실행한다.
 migrate:
 	go run ./cmd/batch migrate
 
@@ -91,6 +91,11 @@ deploy-web:
 
 deploy-batch:
 	scripts/deploy.sh batch
+
+# origin/main을 release로 옮겨서 GitHub Actions가 배포하게 한다. 마이그레이션이 바뀌었으면 운영 DB에 먼저 적용한다.
+# 특정 커밋까지만 배포하려면 make release ARGS=<커밋>
+release:
+	scripts/release.sh $(ARGS)
 
 # https://abc-lib.web.app을 웹 서비스에 연결한다. rewrite 설정을 바꿀 때만 다시 실행한다.
 firebase-hosting:

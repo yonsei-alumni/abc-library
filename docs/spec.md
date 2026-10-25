@@ -210,15 +210,18 @@ make firebase-hosting           # https://abc-lib.web.app을 웹 서비스에 �
 웹과 배치는 따로 판단해서, 배포된 이미지의 커밋(이미지 태그) 이후 그 대상에 들어가는 파일이 바뀌었을 때만 배포한다. 대상 바이너리가 쓰는 패키지(`go list -deps`)와 `go.mod`, `go.sum`, `Dockerfile.<대상>`, `.dockerignore`, `scripts/deploy.sh`, `scripts/gcp-env.sh`를 보고, 테스트와 문서는 빼고 본다. 웹은 `internal/band`와 `internal/kyobo`도 쓰므로 이 패키지가 바뀌면 함께 배포된다. GitHub Actions에서 워크플로를 직접 실행하면 둘 다 배포한다. 환경 변수와 비밀 값 연결은 서비스와 Job에 남아 있어서 워크플로는 이미지만 바꾼다.
 
 ```bash
-git push origin main:release    # main을 release로 fast-forward해서 배포(GitHub에서 main → release PR을 merge해도 된다)
+make release                 # origin/main을 release로 옮겨서 배포한다(scripts/release.sh)
+make release ARGS=<커밋>      # origin/main에 있는 그 커밋까지만 배포한다
 ```
+
+`make release`는 `release`에 올라갈 커밋을 보여 주고, 그 사이에 마이그레이션이 바뀌었으면 배포할 커밋의 마이그레이션을 운영 DB에 먼저 적용한 뒤 push한다. 그래서 `.envrc`를 읽은 셸에서 실행한다. `release`에 `main`에 없는 커밋이 있으면 멈춘다. GitHub에서 `main` → `release` PR을 merge해도 배포되지만, 그때는 마이그레이션을 `make migrate`로 먼저 적용한다.
 
 GitHub Actions가 GCP 토큰을 받는 Workload Identity Federation 공급자에는 이 저장소의 `release` 브랜치 조건이 걸려 있다. 배포 브랜치를 바꾸면 `scripts/gcp-setup.sh`의 조건도 고치고 `make gcp-setup`을 다시 실행한다.
 
 - 밴드 세션이 만료되면 Job이 실패하고 알림 메일이 온다. `make band-login` 뒤에 `make band-secret`을 실행한다. Job은 비밀의 최신 버전을 읽으므로 다시 배포하지 않아도 된다.
 - Claude API 키를 바꾸려면 `gcloud secrets versions add claude-api-key --data-file=-`로 새 버전을 올린다.
 - 웹 서버는 `robots.txt`와 `X-Robots-Tag: noindex`로 검색엔진 수집을 막는다.
-- 웹 서버는 마이그레이션을 적용하지 않는다. 스키마를 바꾼 코드를 `release`에 merge하기 전에 `make migrate`로 운영 DB에 먼저 적용한다. 그렇지 않으면 배포된 웹 서버가 다음 배치 실행까지 오류를 낸다.
+- 웹 서버는 마이그레이션을 적용하지 않는다. 스키마를 바꾼 코드를 `release`에 올리기 전에 운영 DB에 먼저 적용한다(`make release`가 한다). 그렇지 않으면 배포된 웹 서버가 다음 배치 실행까지 오류를 낸다.
 
 ### 로그인 설정
 
