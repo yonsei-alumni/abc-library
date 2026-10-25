@@ -146,6 +146,7 @@ a { color: inherit; }
 
 main.wrap { padding-top: 24px; padding-bottom: 48px; min-height: 60vh; }
 .page-title { font-size: 1.625rem; line-height: 1.3; margin: 0 0 18px; letter-spacing: -.025em; }
+.title-count { color: var(--muted); font-size: .6em; font-weight: 600; letter-spacing: 0; white-space: nowrap; }
 .empty, .filter-note { color: var(--muted); }
 .filter-note a { color: var(--accent); }
 

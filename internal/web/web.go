@@ -36,6 +36,7 @@ const pageSize = 24
 type Store interface {
 	Timeline(ctx context.Context, limit, offset int) ([]book.Entry, error)
 	Books(ctx context.Context, f store.Filter, limit, offset int) ([]book.Shelved, error)
+	BookCount(ctx context.Context, f store.Filter) (int, error)
 	Book(ctx context.Context, id int64) (book.Book, []book.Mention, error)
 	TagCounts(ctx context.Context) ([]book.Count, error)
 	AuthorCounts(ctx context.Context) ([]book.Count, error)
@@ -253,12 +254,16 @@ func trimPage[T any](items []T, p int) ([]T, int) {
 
 // renderList는 HTMX의 '더 보기' 요청이면 이어 붙일 목록 조각(items)만, 아니면 화면 전체를 그린다.
 func (s *Server) renderList(w http.ResponseWriter, r *http.Request, page, items string, data map[string]any) {
-	more := r.Header.Get("HX-Request") == "true" && strings.HasSuffix(r.Header.Get("HX-Target"), "-more")
-	if more {
+	if isMore(r) {
 		s.render(w, r, page, items, data)
 		return
 	}
 	s.render(w, r, page, "layout", data)
+}
+
+// isMore는 목록의 '더 보기'가 다음 쪽을 이어 붙이려고 보낸 HTMX 요청인지 알려 준다.
+func isMore(r *http.Request) bool {
+	return r.Header.Get("HX-Request") == "true" && strings.HasSuffix(r.Header.Get("HX-Target"), "-more")
 }
 
 func (s *Server) timeline(w http.ResponseWriter, r *http.Request) {
@@ -293,9 +298,19 @@ func (s *Server) books(w http.ResponseWriter, r *http.Request) {
 	case f.Author != "":
 		title = f.Author + "의 책"
 	}
-	s.renderList(w, r, "books", "book-cards", map[string]any{
+	data := map[string]any{
 		"Title": title, "Nav": "books", "Filter": f, "Query": f.Query, "Shelf": shelf, "NextPage": next,
-	})
+	}
+	// 책 수는 제목 옆에만 보이므로 '더 보기'로 이어 붙일 때는 세지 않는다.
+	if !isMore(r) {
+		total, err := s.store.BookCount(r.Context(), f)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		data["Total"] = total
+	}
+	s.renderList(w, r, "books", "book-cards", data)
 }
 
 func (s *Server) book(w http.ResponseWriter, r *http.Request) {

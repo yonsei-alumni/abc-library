@@ -1,5 +1,5 @@
 {{define "content"}}
-<h1 class="page-title">{{.Title}}</h1>
+<h1 class="page-title">{{.Title}}{{with .Total}} <span class="title-count">{{.}}권</span>{{end}}</h1>
 {{if or .Filter.Tag .Filter.Author .Filter.Query}}<p class="filter-note"><a href="/books">모든 책 보기</a></p>{{end}}
 {{if .Shelf}}
 <ul class="shelf">

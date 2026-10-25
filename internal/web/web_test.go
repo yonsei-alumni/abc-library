@@ -30,6 +30,7 @@ var defaultTags = book.TagList{{Name: "AI", Topic: true}, {Name: "SF", Topic: tr
 
 type fakeStore struct {
 	filter  store.Filter
+	counted []store.Filter
 	offsets []int
 	entries int
 	fail    bool
@@ -73,6 +74,20 @@ func (f *fakeStore) Books(_ context.Context, filter store.Filter, _, _ int) ([]b
 		return nil, nil
 	}
 	return []book.Shelved{{Book: story, LastPostedAt: posted, PostCount: 2}, {Book: noIsbn, LastPostedAt: posted, PostCount: 1}}, nil
+}
+
+func (f *fakeStore) BookCount(_ context.Context, filter store.Filter) (int, error) {
+	f.counted = append(f.counted, filter)
+	if f.fail {
+		return 0, errors.New("DB 오류")
+	}
+	if filter.Query == "없는 책" {
+		return 0, nil
+	}
+	if filter == (store.Filter{}) {
+		return 1234, nil
+	}
+	return 2, nil
 }
 
 func (f *fakeStore) Book(_ context.Context, id int64) (book.Book, []book.Mention, error) {
@@ -288,7 +303,10 @@ func TestBooksFilterAndSearch(t *testing.T) {
 	if code != http.StatusOK || st.filter.Tag != "SF" {
 		t.Fatalf("code = %d, filter = %+v", code, st.filter)
 	}
-	assertContains(t, body, `<h1 class="page-title">#SF</h1>`, "pdt/9791196914806.jpg", "cover-blank", "게시글 2개", "모든 책 보기")
+	assertContains(t, body, `<h1 class="page-title">#SF <span class="title-count">2권</span></h1>`, "pdt/9791196914806.jpg", "cover-blank", "게시글 2개", "모든 책 보기")
+	if len(st.counted) != 1 || st.counted[0].Tag != "SF" {
+		t.Errorf("책 수는 같은 조건으로 세야 한다: %+v", st.counted)
+	}
 
 	_, body = get(t, st, "/books?author=%ED%85%8C%EB%93%9C+%EC%B0%BD")
 	assertContains(t, body, "테드 창의 책")
@@ -300,7 +318,20 @@ func TestBooksFilterAndSearch(t *testing.T) {
 	assertContains(t, body, "‘테드’ 검색 결과", `id="content"`, `value="테드"`)
 
 	_, body = get(t, st, "/books?q=%EC%97%86%EB%8A%94+%EC%B1%85")
-	assertContains(t, body, "검색 결과가 없습니다.")
+	assertContains(t, body, `<h1 class="page-title">‘없는 책’ 검색 결과</h1>`, "검색 결과가 없습니다.")
+}
+
+func TestBooksShowsTotal(t *testing.T) {
+	st := &fakeStore{}
+	_, body := get(t, st, "/books")
+	assertContains(t, body, `<h1 class="page-title">모든 책 <span class="title-count">1234권</span></h1>`)
+
+	// '더 보기'로 이어 붙이는 쪽에는 제목이 없으므로 책 수를 세지 않는다.
+	st.counted = nil
+	_, body = get(t, st, "/books?page=2", "HX-Request", "true", "HX-Target", "shelf-more")
+	if len(st.counted) != 0 || strings.Contains(body, "title-count") {
+		t.Errorf("다음 쪽에서는 책 수를 세지 않아야 한다: %v", st.counted)
+	}
 }
 
 func TestBookDetailShowsThreads(t *testing.T) {

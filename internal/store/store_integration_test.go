@@ -295,6 +295,30 @@ func TestSearchCountsAndFilter(t *testing.T) {
 		if got := titles(tt.filter); !sameSet(got, tt.want) {
 			t.Errorf("Books(%+v) = %q, want %q", tt.filter, got, tt.want)
 		}
+		want := 0
+		if tt.want != "" {
+			want = len(strings.Split(tt.want, ","))
+		}
+		// BookCount는 Books와 같은 조건으로 센다.
+		if n, err := s.BookCount(ctx, tt.filter); err != nil || n != want {
+			t.Errorf("BookCount(%+v) = %d, %v, want %d", tt.filter, n, err, want)
+		}
+	}
+
+	// 관리자가 언급을 모두 지운 책은 목록에서 빠지므로 세지 않는다.
+	shelf, err := s.Books(ctx, Filter{Query: "AI 2041"}, 10, 0)
+	if err != nil || len(shelf) != 1 {
+		t.Fatalf("AI 2041 = %+v, %v", shelf, err)
+	}
+	_, mentions, err := s.Book(ctx, shelf[0].Book.ID)
+	if err != nil || len(mentions) != 1 {
+		t.Fatalf("언급 = %+v, %v", mentions, err)
+	}
+	if err := s.DeleteMention(ctx, mentions[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := s.BookCount(ctx, Filter{}); err != nil || n != 2 {
+		t.Errorf("언급을 모두 지운 책은 세지 않아야 한다: %d, %v", n, err)
 	}
 }
 

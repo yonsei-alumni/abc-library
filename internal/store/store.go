@@ -468,24 +468,37 @@ func (r shelvedRow) toShelved() book.Shelved {
 	return book.Shelved{Book: r.toBook(), LastPostedAt: r.LastPostedAt, PostCount: r.PostCount}
 }
 
+// filterCondition은 Filter의 조건이다. 테이블 별칭은 b이고, 인자는 filterArgs로 만든다.
+const filterCondition = `(? = '' OR EXISTS (SELECT 1 FROM book_tags t WHERE t.book_id = b.id AND t.tag = ?))
+		  AND (? = '' OR ? = ANY (b.authors))
+		  AND (? = '%%' OR squash(b.title) LIKE ?
+		       OR EXISTS (SELECT 1 FROM unnest(b.authors) a WHERE squash(a) LIKE ?)
+		       OR EXISTS (SELECT 1 FROM book_tags t WHERE t.book_id = b.id AND squash(t.tag) LIKE ?))`
+
+func filterArgs(f Filter) []any {
+	pattern := likePattern(f.Query)
+	return []any{f.Tag, f.Tag, f.Author, f.Author, pattern, pattern, pattern, pattern}
+}
+
 // Books는 조건에 맞는 책을 마지막으로 다뤄진 순서로 돌려준다.
 func (s *Store) Books(ctx context.Context, f Filter, limit, offset int) ([]book.Shelved, error) {
-	pattern := likePattern(f.Query)
 	var rows []shelvedRow
 	err := s.db.NewRaw(`
 		SELECT `+bookColumns+`, max(m.mentioned_at) AS last_posted_at, count(DISTINCT m.post_id) AS post_count
 		FROM books b
 		JOIN mentions m ON m.book_id = b.id AND NOT m.hidden
-		WHERE (? = '' OR EXISTS (SELECT 1 FROM book_tags t WHERE t.book_id = b.id AND t.tag = ?))
-		  AND (? = '' OR ? = ANY (b.authors))
-		  AND (? = '%%' OR squash(b.title) LIKE ?
-		       OR EXISTS (SELECT 1 FROM unnest(b.authors) a WHERE squash(a) LIKE ?)
-		       OR EXISTS (SELECT 1 FROM book_tags t WHERE t.book_id = b.id AND squash(t.tag) LIKE ?))
+		WHERE `+filterCondition+`
 		GROUP BY b.id
 		ORDER BY last_posted_at DESC, b.id
-		LIMIT ? OFFSET ?`,
-		f.Tag, f.Tag, f.Author, f.Author, pattern, pattern, pattern, pattern, limit, offset).Scan(ctx, &rows)
+		LIMIT ? OFFSET ?`, append(filterArgs(f), limit, offset)...).Scan(ctx, &rows)
 	return convert(rows, shelvedRow.toShelved), err
+}
+
+// BookCount는 Books가 돌려줄 책의 수다.
+func (s *Store) BookCount(ctx context.Context, f Filter) (int, error) {
+	var n int
+	err := s.db.NewRaw(`SELECT count(*) FROM books b WHERE `+visibleBook+` AND `+filterCondition, filterArgs(f)...).Scan(ctx, &n)
+	return n, err
 }
 
 // likePattern은 검색어를 squash와 같은 방식(소문자, 공백 제거)으로 바꾸고 LIKE 특수 문자를 이스케이프한다.
