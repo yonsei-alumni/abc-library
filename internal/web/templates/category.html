@@ -5,26 +5,11 @@
 {{template "notice" .}}
 
 <section class="admin-section">
-  <form class="admin-form" method="post" action="/me/categories/{{.Stored.ID}}">
-    <label>제목 <input name="title" value="{{.Form.Title}}" required maxlength="100"></label>
+  <div class="admin-form">
+    <label>제목 <input form="category-form" name="title" value="{{.Form.Title}}" required maxlength="100"></label>
     <p class="hint">나에게만 보입니다.</p>
-    <label>본문 <textarea name="body" rows="10" maxlength="20000">{{.Form.Body}}</textarea></label>
-    <p class="hint">여러 줄로 쓸 수 있고 Markdown을 씁니다. 예: <code># 제목</code>, <code>**굵게**</code>, <code>- 목록</code>, <code>[링크](https://example.com)</code>. HTML은 싣지 않습니다.</p>
-    <label>공개용 제목 <input name="public_title" value="{{.Form.PublicTitle}}" maxlength="100" placeholder="비우면 제목을 씁니다"></label>
-    <label class="check"><input type="checkbox" name="public" value="1" {{if .Form.Public}}checked{{end}}> 공개</label>
-    <p class="hint">공개하면 '공개 북마크' 목록에 실리고, 누구나 공개용 제목, 본문, 책 목록을 봅니다.
-      공개 주소: <a class="share-link" href="/shared/{{.Stored.Code}}">{{.SiteURL}}/shared/{{.Stored.Code}}</a>{{if not .Stored.Public}} (지금은 나에게만 보입니다){{end}}</p>
-    <p class="hint">{{template "add-book-hint"}}</p>
-    <p><button class="button">저장</button></p>
-  </form>
+  </div>
 </section>
-
-{{with .Stored.Body}}
-<section class="admin-section">
-  <h2>본문 미리 보기</h2>
-  <div class="markdown">{{markdown .}}</div>
-</section>
-{{end}}
 
 <section class="admin-section">
   <h2>책 {{len .Books}}권</h2>
@@ -47,6 +32,27 @@
   <p class="empty">책 화면의 북마크에서 이 카테고리를 고르면 여기에 모입니다.</p>
   {{end}}
 </section>
+
+<section class="admin-section">
+  <form class="admin-form" id="category-form" method="post" action="/me/categories/{{.Stored.ID}}">
+    <label>본문 <textarea name="body" rows="10" maxlength="20000">{{.Form.Body}}</textarea></label>
+    <p class="hint">나에게 남기는 메모나, 공개할 때 다른 사람에게 보여 줄 설명을 적을 수 있습니다. 비워 두어도 됩니다.
+      여러 줄로 쓸 수 있고 Markdown을 씁니다. 예: <code># 제목</code>, <code>**굵게**</code>, <code>- 목록</code>, <code>[링크](https://example.com)</code>. HTML은 싣지 않습니다.</p>
+    <label>공개용 제목 <input name="public_title" value="{{.Form.PublicTitle}}" maxlength="100" placeholder="비우면 제목을 씁니다"></label>
+    <label class="check"><input type="checkbox" name="public" value="1" {{if .Form.Public}}checked{{end}}> 공개</label>
+    <p class="hint">공개하면 '공개 북마크' 목록에 실리고, 누구나 공개용 제목, 본문, 책 목록을 봅니다.
+      공개 주소: <a class="share-link" href="/shared/{{.Stored.Code}}">{{.SiteURL}}/shared/{{.Stored.Code}}</a>{{if not .Stored.Public}} (지금은 나에게만 보입니다){{end}}</p>
+    <p class="hint">{{template "add-book-hint"}}</p>
+    <p><button class="button">저장</button></p>
+  </form>
+</section>
+
+{{with .Stored.Body}}
+<section class="admin-section">
+  <h2>본문 미리 보기</h2>
+  <div class="markdown">{{markdown .}}</div>
+</section>
+{{end}}
 
 <section class="admin-section">
   <h2>카테고리 지우기</h2>

@@ -385,7 +385,12 @@ func TestCategoryPages(t *testing.T) {
 
 	body := a.get("/me/categories/100?done=category-added", me).Body.String()
 	assertContains(t, body, "카테고리를 만들었습니다.", `name="public_title"`, `name="body"`, "Markdown",
-		"https://abc-lib.web.app/shared/"+code, "지금은 나에게만 보입니다", "밴드에서 책에 대한 글을 써주세요")
+		"https://abc-lib.web.app/shared/"+code, "지금은 나에게만 보입니다", "밴드에서 책에 대한 글을 써주세요",
+		`<input form="category-form" name="title"`, `id="category-form"`, "메모나, 공개할 때 다른 사람에게 보여 줄 설명")
+	// 제목 바로 아래에 책 목록이 오고, 쓰지 않아도 되는 본문은 그 아래에 온다.
+	if title, shelf, text := strings.Index(body, `name="title"`), strings.Index(body, `class="shelf sortable"`), strings.Index(body, `name="body"`); title >= shelf || shelf >= text {
+		t.Errorf("제목 %d, 책 목록 %d, 본문 %d 순서가 아니다", title, shelf, text)
+	}
 
 	form := url.Values{"title": {"올해의 SF"}, "body": {"# 소개\r\n좋아하는 책"}, "public_title": {"추천 SF"}, "public": {"1"}}
 	expectRedirect(t, a.post("/me/categories/100", form, me), "/me/categories/100?done=category-saved")
