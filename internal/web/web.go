@@ -94,6 +94,13 @@ type Config struct {
 	Subjects *auth.Subjects
 	// SiteURL은 사이트의 공개 주소다. 다른 사이트에서 보낸 POST 요청을 막을 때 이 주소는 믿는다.
 	SiteURL string
+	// Products가 nil이면 관리 화면에서 ISBN 없는 상품의 바코드를 찾지 않는다.
+	Products Products
+}
+
+// Products는 교보문고 상품 찾기다. *kyobo.Client가 구현한다.
+type Products interface {
+	Product(ctx context.Context, pid string) (kyobo.Edition, bool, error)
 }
 
 // Server는 웹 화면이다.
@@ -104,6 +111,7 @@ type Server struct {
 	sessions *auth.Sessions
 	subjects *auth.Subjects
 	siteURL  string
+	products Products
 	log      *slog.Logger
 	pages    map[string]*template.Template
 }
@@ -112,7 +120,7 @@ type Server struct {
 func New(st Store, cfg Config, log *slog.Logger) (*Server, error) {
 	s := &Server{
 		store: st, bandNo: cfg.BandNo, login: cfg.Login, sessions: cfg.Sessions, subjects: cfg.Subjects, siteURL: cfg.SiteURL,
-		log: log, pages: map[string]*template.Template{},
+		products: cfg.Products, log: log, pages: map[string]*template.Template{},
 	}
 	if (s.login == nil) != (s.sessions == nil) {
 		return nil, errors.New("로그인에는 Login과 Sessions가 모두 있어야 합니다")
@@ -169,11 +177,13 @@ func excerpt(s string) string {
 	return strings.TrimSpace(string(runes[:excerptLen])) + "…"
 }
 
+// coverURL은 교보문고 표지 주소다. ISBN도 바코드도 없는 책은 빈 문자열이다.
 func coverURL(b book.Book, width int) string {
-	if b.ISBN13 == "" {
+	code := b.CoverCode()
+	if code == "" {
 		return ""
 	}
-	return kyobo.CoverURL(b.ISBN13, width)
+	return kyobo.CoverURL(code, width)
 }
 
 // buyURL은 교보문고 상품 페이지 주소다. 상품을 확정하지 못한 책은 교보문고 검색 주소를 쓴다.

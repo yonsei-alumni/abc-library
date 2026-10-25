@@ -25,7 +25,18 @@ type Book struct {
 	Authors   []string
 	Publisher string
 	KyoboPID  string
-	Tags      []string
+	// KyoboBarcode는 잡지처럼 ISBN-13이 없는 교보문고 상품의 바코드다. 표지 이미지에 쓴다.
+	KyoboBarcode string
+	Tags         []string
+}
+
+// CoverCode는 교보문고 표지 이미지를 찾는 바코드다. ISBN이 있으면 ISBN이고, 없으면 상품의 바코드다.
+// 둘 다 없으면 빈 문자열이다.
+func (b Book) CoverCode() string {
+	if b.ISBN13 != "" {
+		return b.ISBN13
+	}
+	return b.KyoboBarcode
 }
 
 // Link는 요약에 덧붙이는 책 관련 링크다.

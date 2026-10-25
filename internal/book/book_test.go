@@ -120,3 +120,20 @@ func TestValidISBN13(t *testing.T) {
 		}
 	}
 }
+
+func TestCoverCode(t *testing.T) {
+	for _, tt := range []struct {
+		b    Book
+		want string
+	}{
+		{Book{ISBN13: "9791196914806", KyoboBarcode: "3904000631271"}, "9791196914806"},
+		{Book{KyoboBarcode: "3904000631271", KyoboPID: "S000221152938"}, "3904000631271"},
+		// 상품 번호만 있으면 표지를 찾을 수 없다.
+		{Book{KyoboPID: "S000221152938"}, ""},
+		{Book{}, ""},
+	} {
+		if got := tt.b.CoverCode(); got != tt.want {
+			t.Errorf("CoverCode(%+v) = %q, want %q", tt.b, got, tt.want)
+		}
+	}
+}

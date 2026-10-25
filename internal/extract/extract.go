@@ -58,9 +58,10 @@ type Input struct {
 	Comments []Comment
 }
 
-// Searcher는 교보문고 검색이다.
+// Searcher는 교보문고 검색이다. *kyobo.Client가 구현한다.
 type Searcher interface {
 	Search(ctx context.Context, query string) ([]kyobo.Edition, error)
+	Product(ctx context.Context, pid string) (kyobo.Edition, bool, error)
 }
 
 // MessageAPI는 Claude Messages API다. *anthropic.BetaMessageService가 구현한다.
@@ -98,17 +99,21 @@ type result struct {
 			Comment int    `json:"comment"`
 			Summary string `json:"summary"`
 		} `json:"comments"`
-		UnrelatedLinks []int `json:"unrelated_links"`
+		UnrelatedLinks []int  `json:"unrelated_links"`
+		KyoboPID       string `json:"kyobo_pid"`
 	} `json:"books"`
 }
 
 // Extract는 게시글(본문과 댓글)에서 찾은 책과, 그 책에 대한 언급 요약을 돌려준다.
 func (e *Extractor) Extract(ctx context.Context, in Input) ([]book.Finding, error) {
 	// 상품 링크의 판본은 검색 결과로 친다. 검색에서 같은 ISBN이 나와도 링크의 상품 번호를 쓴다.
+	// ISBN이 없는 상품은 Claude가 상품 번호로 고른다.
 	linked := e.linkedEditions(ctx, in)
 	seen := map[string]kyobo.Edition{}
 	for _, ed := range linked {
-		seen[ed.ISBN13] = ed
+		if ed.ISBN13 != "" {
+			seen[ed.ISBN13] = ed
+		}
 	}
 	messages := []anthropic.BetaMessageParam{anthropic.NewBetaUserMessage(userContent(in, linked)...)}
 	for range maxTurns {
@@ -129,7 +134,7 @@ func (e *Extractor) Extract(ctx context.Context, in Input) ([]book.Finding, erro
 			}
 			messages = append(messages, anthropic.NewBetaUserMessage(results...))
 		case anthropic.BetaStopReasonEndTurn:
-			return e.parseResult(resp, in, seen)
+			return e.parseResult(resp, in, seen, linked)
 		default:
 			return nil, fmt.Errorf("예상하지 못한 stop_reason: %s", resp.StopReason)
 		}
@@ -165,8 +170,8 @@ func (e *Extractor) params(messages []anthropic.BetaMessageParam) anthropic.Beta
 	}
 }
 
-// linkedEditions는 본문과 댓글의 교보문고 상품 링크가 가리키는 판본을 상품 번호로 찾는다.
-// 상품 번호로 검색하면 그 상품이 나온다. 찾지 못한 링크는 Claude가 평소처럼 제목으로 검색한다.
+// linkedEditions는 본문과 댓글의 교보문고 상품 링크가 가리키는 판본을 상품 번호로 찾는다. 결과의 키는 상품 번호다.
+// 잡지처럼 ISBN이 없는 상품도 넣는다. 찾지 못한 링크는 Claude가 평소처럼 제목으로 검색한다.
 func (e *Extractor) linkedEditions(ctx context.Context, in Input) map[string]kyobo.Edition {
 	links := slices.Clone(in.Links)
 	for _, c := range in.Comments {
@@ -180,15 +185,8 @@ func (e *Extractor) linkedEditions(ctx context.Context, in Input) map[string]kyo
 			continue
 		}
 		tried[pid] = true
-		eds, err := e.search.Search(ctx, pid)
-		if err != nil {
-			continue
-		}
-		for _, ed := range eds {
-			if ed.PID == pid {
-				editions[pid] = ed
-				break
-			}
+		if ed, ok, err := e.search.Product(ctx, pid); err == nil && ok {
+			editions[pid] = ed
 		}
 	}
 	return editions
@@ -231,7 +229,11 @@ func productNote(l book.Link, linked map[string]kyobo.Edition) string {
 	if !ok {
 		return ""
 	}
-	return fmt.Sprintf(" → 교보문고 상품: isbn13 %s, %s, %s, %s", ed.ISBN13, ed.Title, strings.Join(ed.Authors, ", "), ed.Publisher)
+	isbn := ed.ISBN13
+	if isbn == "" {
+		isbn = "없음"
+	}
+	return fmt.Sprintf(" → 교보문고 상품: 상품 번호 %s, isbn13 %s, %s, %s, %s", ed.PID, isbn, ed.Title, strings.Join(ed.Authors, ", "), ed.Publisher)
 }
 
 // readableURL은 퍼센트 인코딩된 주소를 사람이 읽을 수 있게 푼다. 독서 기록 주소처럼 제목 없는 링크는
@@ -273,7 +275,7 @@ func (e *Extractor) runSearch(ctx context.Context, use anthropic.BetaToolUseBloc
 	return anthropic.NewBetaToolResultBlock(use.ID, string(out), false)
 }
 
-func (e *Extractor) parseResult(resp *anthropic.BetaMessage, in Input, seen map[string]kyobo.Edition) ([]book.Finding, error) {
+func (e *Extractor) parseResult(resp *anthropic.BetaMessage, in Input, seen, linked map[string]kyobo.Edition) ([]book.Finding, error) {
 	var text strings.Builder
 	for _, block := range resp.Content {
 		if t, ok := block.AsAny().(anthropic.BetaTextBlock); ok {
@@ -295,9 +297,16 @@ func (e *Extractor) parseResult(resp *anthropic.BetaMessage, in Input, seen map[
 	postBooks := 0
 	for i, rb := range r.Books {
 		b := book.Book{Title: strings.TrimSpace(rb.Title), Authors: trimAll(rb.Authors), Tags: pickTags(rb.Tags, e.tags)}
-		// 검색 결과에 없던 ISBN은 Claude가 지어냈을 수 있으므로 버린다.
-		if ed, ok := seen[rb.ISBN13]; ok {
+		// 링크에 없던 상품 번호와 검색 결과에 없던 ISBN은 Claude가 지어냈을 수 있으므로 버린다.
+		ed, ok := linked[rb.KyoboPID]
+		if !ok && rb.ISBN13 != "" {
+			ed, ok = seen[rb.ISBN13]
+		}
+		if ok {
 			b.ISBN13, b.Title, b.Publisher, b.KyoboPID = ed.ISBN13, ed.Title, ed.Publisher, ed.PID
+			if ed.ISBN13 == "" {
+				b.KyoboBarcode = ed.Barcode
+			}
 			if len(ed.Authors) > 0 {
 				b.Authors = ed.Authors
 			}

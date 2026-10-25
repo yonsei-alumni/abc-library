@@ -50,12 +50,19 @@ func (f *fakeAPI) New(_ context.Context, p anthropic.BetaMessageNewParams, _ ...
 
 type fakeSearch struct{ queries []string }
 
+var storyEdition = kyobo.Edition{
+	PID: "S000001981838", Barcode: "9791196914806", ISBN13: "9791196914806", Title: "당신 인생의 이야기",
+	Authors: []string{"테드 창"}, Publisher: "엘리", Category: "국내도서",
+}
+
 func (f *fakeSearch) Search(_ context.Context, q string) ([]kyobo.Edition, error) {
 	f.queries = append(f.queries, q)
-	return []kyobo.Edition{{
-		PID: "S000001981838", ISBN13: "9791196914806", Title: "당신 인생의 이야기",
-		Authors: []string{"테드 창"}, Publisher: "엘리", Category: "국내도서",
-	}}, nil
+	return []kyobo.Edition{storyEdition}, nil
+}
+
+func (f *fakeSearch) Product(_ context.Context, pid string) (kyobo.Edition, bool, error) {
+	f.queries = append(f.queries, pid)
+	return storyEdition, pid == storyEdition.PID, nil
 }
 
 func message(stop string, content ...string) string {
@@ -78,7 +85,7 @@ func found(title, isbn string, tags []string, postSummary string, postLinks []in
 	if postLinks == nil {
 		postLinks = []int{}
 	}
-	return m{"title": title, "authors": []string{"테드 창"}, "isbn13": isbn, "tags": tags,
+	return m{"title": title, "authors": []string{"테드 창"}, "isbn13": isbn, "kyobo_pid": "", "tags": tags,
 		"post": m{"summary": postSummary, "links": postLinks}, "comments": comments, "unrelated_links": []int{}}
 }
 
@@ -171,10 +178,21 @@ type productSearch struct {
 
 func (f *productSearch) Search(_ context.Context, q string) ([]kyobo.Edition, error) {
 	f.queries = append(f.queries, q)
-	if q == "오류" || strings.HasPrefix(q, "S9") {
-		return nil, errors.New("교보문고 응답 코드 503")
-	}
 	return f.results[q], nil
+}
+
+// Product는 상품 번호를 검색어로 한 결과에서 그 상품을 찾는다. S9로 시작하는 상품 번호는 검색에 실패한다.
+func (f *productSearch) Product(_ context.Context, pid string) (kyobo.Edition, bool, error) {
+	f.queries = append(f.queries, pid)
+	if strings.HasPrefix(pid, "S9") {
+		return kyobo.Edition{}, false, errors.New("교보문고 응답 코드 503")
+	}
+	for _, ed := range f.results[pid] {
+		if ed.PID == pid {
+			return ed, true, nil
+		}
+	}
+	return kyobo.Edition{}, false, nil
 }
 
 func TestExtractUsesLinkedKyoboProduct(t *testing.T) {
@@ -222,8 +240,8 @@ func TestExtractUsesLinkedKyoboProduct(t *testing.T) {
 	}
 	req, _ := json.Marshal(api.calls[0])
 	body := string(req)
-	if !strings.Contains(body, "[1] 세계 너머의 세계 | 교보문고 https://product.kyobobook.co.kr/detail/S000213812009 → 교보문고 상품: isbn13 9788965966388, 세계 너머의 세계, 에릭 호엘, 흐름출판") ||
-		!strings.Contains(body, "링크 [2]  https://product.kyobobook.co.kr/detail/S000213812009/ → 교보문고 상품: isbn13 9788965966388") {
+	if !strings.Contains(body, "[1] 세계 너머의 세계 | 교보문고 https://product.kyobobook.co.kr/detail/S000213812009 → 교보문고 상품: 상품 번호 S000213812009, isbn13 9788965966388, 세계 너머의 세계, 에릭 호엘, 흐름출판") ||
+		!strings.Contains(body, "링크 [2]  https://product.kyobobook.co.kr/detail/S000213812009/ → 교보문고 상품: 상품 번호 S000213812009, isbn13 9788965966388") {
 		t.Errorf("상품 링크 뒤에 판본 정보를 붙여야 한다: %s", body)
 	}
 	for _, unwanted := range []string{"S900000000000 →", "S000000000404 →", "트렌드 너머의 세계"} {
@@ -234,6 +252,34 @@ func TestExtractUsesLinkedKyoboProduct(t *testing.T) {
 	// 상품 링크는 서점 링크라서 언급에 붙이지 않는다.
 	if l := got[0].Mentions[0].Links; len(l) != 0 {
 		t.Errorf("본문 링크 = %+v", l)
+	}
+}
+
+func TestExtractUsesLinkedProductWithoutISBN(t *testing.T) {
+	magazine := kyobo.Edition{PID: "S000221152938", Barcode: "3904000631271", Title: "스켑틱(Skeptic)(47호)", Authors: []string{"바다출판사 편집부"}, Publisher: "바다출판사"}
+	search := &productSearch{results: map[string][]kyobo.Edition{"S000221152938": {magazine}}}
+	in := Input{PostedAt: postedAt, Text: "과학 잡지 최신호", Links: []book.Link{{URL: "https://product.kyobobook.co.kr/detail/S000221152938", Title: "스켑틱 47호"}}}
+	skeptic := found("한국 스켑틱 47호", "", []string{"과학"}, "요약", nil)
+	skeptic["kyobo_pid"] = "S000221152938"
+	// 링크에 없던 상품 번호는 지어낸 것일 수 있으므로 버린다.
+	other := found("다른 잡지", "", []string{}, "요약", nil)
+	other["kyobo_pid"] = "S000000000777"
+	api := &fakeAPI{responses: []string{message("end_turn", textBlock(m{"books": []m{skeptic, other}}))}}
+
+	got, err := New(api, search, testTags).Extract(context.Background(), in)
+	if err != nil || len(got) != 2 {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+	if b := got[0].Book; b.KyoboPID != "S000221152938" || b.KyoboBarcode != "3904000631271" || b.ISBN13 != "" ||
+		b.Title != "스켑틱(Skeptic)(47호)" || b.Publisher != "바다출판사" {
+		t.Errorf("ISBN 없는 상품의 상품 번호와 바코드를 써야 한다: %+v", b)
+	}
+	if b := got[1].Book; b.KyoboPID != "" || b.KyoboBarcode != "" || b.Title != "다른 잡지" {
+		t.Errorf("링크에 없던 상품 번호는 버려야 한다: %+v", b)
+	}
+	req, _ := json.Marshal(api.calls[0])
+	if !strings.Contains(string(req), "→ 교보문고 상품: 상품 번호 S000221152938, isbn13 없음, 스켑틱(Skeptic)(47호), 바다출판사 편집부, 바다출판사") {
+		t.Errorf("ISBN 없는 상품도 링크 뒤에 붙여야 한다: %s", req)
 	}
 }
 

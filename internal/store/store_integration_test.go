@@ -433,3 +433,46 @@ func TestCommentCounts(t *testing.T) {
 		t.Errorf("댓글 수만 고쳐야 한다: 해시 %q", hash)
 	}
 }
+
+func TestKyoboBarcodeForProductWithoutISBN(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	// ISBN을 모르는 책을 먼저 저장하고, 다른 글에서 상품 번호와 바코드를 찾으면 빈 값만 채운다.
+	magazine := book.Book{Title: "한국 스켑틱 47호", Authors: []string{"스켑틱 협회"}}
+	if err := s.SavePost(ctx, book.Post{No: 1, PostedAt: day(1), ContentHash: "a"}, []book.Finding{{Book: magazine, Mentions: []book.Mention{mention(book.InPost, 1, "요약")}}}); err != nil {
+		t.Fatal(err)
+	}
+	linked := magazine
+	linked.KyoboPID, linked.KyoboBarcode, linked.Publisher = "S000221152938", "3904000631271", "바다출판사"
+	if err := s.SavePost(ctx, book.Post{No: 2, PostedAt: day(2), ContentHash: "b"}, []book.Finding{{Book: linked, Mentions: []book.Mention{mention(book.InPost, 2, "요약")}}}); err != nil {
+		t.Fatal(err)
+	}
+	shelf, err := s.Books(ctx, Filter{}, 10, 0)
+	if err != nil || len(shelf) != 1 {
+		t.Fatalf("책은 한 권이어야 한다: %+v, %v", shelf, err)
+	}
+	b := shelf[0].Book
+	if b.KyoboPID != "S000221152938" || b.KyoboBarcode != "3904000631271" || b.CoverCode() != "3904000631271" {
+		t.Fatalf("상품 번호와 바코드를 채워야 한다: %+v", b)
+	}
+
+	// 이미 있는 바코드는 다른 값으로 바꾸지 않는다.
+	other := linked
+	other.KyoboBarcode = "3904000000000"
+	if err := s.SavePost(ctx, book.Post{No: 3, PostedAt: day(3), ContentHash: "c"}, []book.Finding{{Book: other, Mentions: []book.Mention{mention(book.InPost, 3, "요약")}}}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, _ := s.Book(ctx, b.ID); got.KyoboBarcode != "3904000631271" {
+		t.Errorf("이미 있는 바코드를 바꾸면 안 된다: %+v", got)
+	}
+
+	// 관리자는 바코드를 고치거나 지운다.
+	b.KyoboBarcode = ""
+	if err := s.UpdateBook(ctx, b); err != nil {
+		t.Fatal(err)
+	}
+	if got, _, _ := s.Book(ctx, b.ID); got.KyoboBarcode != "" || got.CoverCode() != "" {
+		t.Errorf("관리자가 지운 바코드 = %+v", got)
+	}
+}

@@ -500,3 +500,19 @@ func TestPrivacyPageLeavesOutAdminEmail(t *testing.T) {
 		t.Error("처리방침에 관리자 메일 주소 항목이 있다")
 	}
 }
+
+func TestCoverURLUsesBarcodeWithoutISBN(t *testing.T) {
+	for _, tt := range []struct {
+		b    book.Book
+		want string
+	}{
+		{story, "https://contents.kyobobook.co.kr/sih/fit-in/200x0/pdt/9791196914806.jpg"},
+		{book.Book{KyoboPID: "S000221152938", KyoboBarcode: "3904000631271"}, "https://contents.kyobobook.co.kr/sih/fit-in/200x0/pdt/3904000631271.jpg"},
+		// 상품 번호로는 표지를 찾을 수 없으므로 빈 표지를 그린다.
+		{book.Book{KyoboPID: "S000221152938"}, ""},
+	} {
+		if got := coverURL(tt.b, 200); got != tt.want {
+			t.Errorf("coverURL(%+v) = %q, want %q", tt.b, got, tt.want)
+		}
+	}
+}

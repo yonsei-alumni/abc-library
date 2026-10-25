@@ -331,6 +331,22 @@ func (s *Server) saveBook(w http.ResponseWriter, r *http.Request) {
 		s.renderBook(w, r, http.StatusBadRequest, f)
 		return
 	}
+	// 교보문고 표지는 상품 번호가 아니라 바코드로 찾는다. ISBN이 없는 상품은 상품 번호로 바코드를 찾아 둔다.
+	if b.ISBN13 == "" && b.KyoboPID != "" && s.products != nil {
+		ed, found, err := s.products.Product(r.Context(), b.KyoboPID)
+		switch {
+		case err != nil:
+			s.log.Warn("교보문고 상품을 찾지 못했다", "상품 번호", b.KyoboPID, "오류", err)
+			f.Error = "교보문고에 연결하지 못했습니다. 잠시 뒤 다시 저장해 주세요."
+			s.renderBook(w, r, http.StatusBadGateway, f)
+			return
+		case !found:
+			f.Error = "교보문고에서 상품 번호 " + b.KyoboPID + "를 찾지 못했습니다. 상품 페이지 주소의 /detail/ 뒤 번호를 확인해 주세요."
+			s.renderBook(w, r, http.StatusBadRequest, f)
+			return
+		}
+		b.KyoboBarcode = ed.Barcode
+	}
 	if newTag != "" {
 		name, err := s.ensureTag(r, book.Tag{Name: newTag, Topic: f.NewTagTopic})
 		if err != nil {

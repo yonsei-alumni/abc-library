@@ -24,3 +24,14 @@ func TestSearchByProductPID(t *testing.T) {
 		t.Errorf("판본 = %+v", ed)
 	}
 }
+
+// 잡지처럼 ISBN이 없는 상품도 상품 번호로 찾고, 바코드로 표지를 받는다.
+func TestProductWithoutISBN(t *testing.T) {
+	ed, ok, err := NewClient().Product(context.Background(), "S000221152938")
+	if err != nil || !ok {
+		t.Fatalf("상품을 찾지 못했다: %v, %v", ok, err)
+	}
+	if ed.ISBN13 != "" || ed.Barcode != "3904000631271" || ed.Publisher != "바다출판사" {
+		t.Errorf("판본 = %+v", ed)
+	}
+}

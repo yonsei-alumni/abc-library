@@ -22,6 +22,7 @@ func TestParseSearch(t *testing.T) {
 	}
 	want := Edition{
 		PID:       "S000001981838",
+		Barcode:   "9791196914806",
 		ISBN13:    "9791196914806",
 		Title:     "당신 인생의 이야기",
 		Authors:   []string{"테드 창"},
@@ -34,6 +35,41 @@ func TestParseSearch(t *testing.T) {
 	}
 	if eds[1].ISBN13 != "9788956057842" || eds[1].PID != "S000000814614" {
 		t.Errorf("두 번째 판본 = %+v", eds[1])
+	}
+}
+
+func TestProductKeepsItemsWithoutISBN(t *testing.T) {
+	page, err := os.ReadFile("testdata/search.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("keyword") == "오류" {
+			http.Error(w, "busy", http.StatusServiceUnavailable)
+			return
+		}
+		_, _ = w.Write(page)
+	}))
+	defer srv.Close()
+	c := NewClient()
+	c.BaseURL = srv.URL
+	c.MinInterval = 0
+	ctx := context.Background()
+
+	// 바코드가 ISBN이 아닌 상품도 상품 번호로 찾고, ISBN은 비우고 바코드는 남긴다.
+	ed, ok, err := c.Product(ctx, "E000003117931")
+	if err != nil || !ok || ed.ISBN13 != "" || ed.Barcode != "4808956057842" || ed.Title != "당신 인생의 이야기" {
+		t.Errorf("ISBN 없는 상품 = %+v, %v, %v", ed, ok, err)
+	}
+	ed, ok, err = c.Product(ctx, "S000000814614")
+	if err != nil || !ok || ed.ISBN13 != "9788956057842" || ed.Barcode != "9788956057842" {
+		t.Errorf("ISBN 있는 상품 = %+v, %v, %v", ed, ok, err)
+	}
+	if _, ok, err := c.Product(ctx, "S999999999999"); err != nil || ok {
+		t.Errorf("결과에 없는 상품은 ok가 거짓이어야 한다: %v, %v", ok, err)
+	}
+	if _, _, err := c.Product(ctx, "오류"); err == nil {
+		t.Error("응답 코드가 200이 아니면 오류여야 한다")
 	}
 }
 

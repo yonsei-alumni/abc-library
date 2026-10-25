@@ -15,6 +15,7 @@ import (
 
 	"github.com/yonsei-alumni/abc-library/internal/auth"
 	"github.com/yonsei-alumni/abc-library/internal/book"
+	"github.com/yonsei-alumni/abc-library/internal/kyobo"
 	"github.com/yonsei-alumni/abc-library/internal/store"
 )
 
@@ -42,9 +43,24 @@ func (f *fakeLogin) Exchange(_ context.Context, code string) (auth.Account, erro
 	return a, f.err
 }
 
+// fakeProducts는 교보문고 상품 찾기다. S9로 시작하는 상품 번호는 연결에 실패한다.
+type fakeProducts struct{ pids []string }
+
+func (f *fakeProducts) Product(_ context.Context, pid string) (kyobo.Edition, bool, error) {
+	f.pids = append(f.pids, pid)
+	switch {
+	case strings.HasPrefix(pid, "S9"):
+		return kyobo.Edition{}, false, errors.New("교보문고 응답 코드 503")
+	case pid == "S000221152938":
+		return kyobo.Edition{PID: pid, Barcode: "3904000631271", Title: "스켑틱(Skeptic)(47호)"}, true, nil
+	}
+	return kyobo.Edition{}, false, nil
+}
+
 type adminSite struct {
 	t        *testing.T
 	st       *fakeStore
+	products *fakeProducts
 	login    *fakeLogin
 	sessions *auth.Sessions
 	subjects *auth.Subjects
@@ -61,8 +77,8 @@ func newAdminSite(t *testing.T) *adminSite {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a := &adminSite{t: t, st: &fakeStore{}, login: &fakeLogin{sub: "109876543210987654321", email: adminAddr}, sessions: sessions, subjects: subjects}
-	s, err := New(a.st, Config{BandNo: "102765569", Login: a.login, Sessions: sessions, Subjects: subjects, SiteURL: "https://abc-lib.web.app"},
+	a := &adminSite{t: t, st: &fakeStore{}, products: &fakeProducts{}, login: &fakeLogin{sub: "109876543210987654321", email: adminAddr}, sessions: sessions, subjects: subjects}
+	s, err := New(a.st, Config{BandNo: "102765569", Login: a.login, Sessions: sessions, Subjects: subjects, SiteURL: "https://abc-lib.web.app", Products: a.products},
 		slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
@@ -393,6 +409,9 @@ func TestAdminBook(t *testing.T) {
 		t.Errorf("저장한 책 = %+v", b)
 	}
 	expectCalls(t, a.st, "UpdateBook 1")
+	if len(a.products.pids) != 0 || a.st.updated.KyoboBarcode != "" {
+		t.Errorf("ISBN이 있으면 교보문고에서 바코드를 찾지 않아야 한다: %v, %+v", a.products.pids, a.st.updated)
+	}
 
 	// 목록에 없는 태그는 태그 목록에 더하면서 붙이고, 대소문자만 다른 태그가 있으면 그 태그를 붙인다.
 	assertContains(t, a.get("/admin/books/1", admin).Body.String(), `name="new_tag"`, `name="new_tag_topic" value="1" >`)
@@ -560,5 +579,40 @@ func TestParseLinks(t *testing.T) {
 	}
 	if got := formatLinks([]book.Link{{URL: "https://a.example.com", Title: "제목"}}); got != "https://a.example.com 제목\n" {
 		t.Errorf("formatLinks = %q", got)
+	}
+}
+
+func TestAdminBookFillsBarcodeForProductWithoutISBN(t *testing.T) {
+	a := newAdminSite(t)
+	admin := a.admin()
+	form := func(pid string) url.Values {
+		return url.Values{"title": {"한국 스켑틱 47호"}, "authors": {"스켑틱 협회"}, "isbn13": {""}, "kyobo_pid": {pid}}
+	}
+	assertContains(t, a.get("/admin/books/1", admin).Body.String(), "상품 번호만 넣으면 저장할 때 교보문고에서 바코드를 찾아")
+
+	expectRedirect(t, a.post("/admin/books/1", form(" S000221152938 "), admin), "/admin/books/1?done=book-saved")
+	if b := a.st.updated; b.KyoboPID != "S000221152938" || b.KyoboBarcode != "3904000631271" || b.ISBN13 != "" {
+		t.Errorf("상품 번호로 찾은 바코드를 저장해야 한다: %+v", b)
+	}
+	expectCalls(t, a.st, "UpdateBook 1")
+
+	// 찾지 못한 상품이나 교보문고 연결 실패는 저장하지 않고 알린다.
+	rec := a.post("/admin/books/1", form("S000000000404"), admin)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("없는 상품 code = %d", rec.Code)
+	}
+	assertContains(t, rec.Body.String(), "notice-error", "상품 번호 S000000000404를 찾지 못했습니다", `value="S000000000404"`)
+	rec = a.post("/admin/books/1", form("S900000000000"), admin)
+	if rec.Code != http.StatusBadGateway {
+		t.Errorf("연결 실패 code = %d", rec.Code)
+	}
+	assertContains(t, rec.Body.String(), "교보문고에 연결하지 못했습니다")
+	expectCalls(t, a.st)
+
+	// 상품 번호가 없으면 찾지 않는다.
+	a.products.pids = nil
+	expectRedirect(t, a.post("/admin/books/1", form(""), admin), "/admin/books/1?done=book-saved")
+	if len(a.products.pids) != 0 || a.st.updated.KyoboBarcode != "" {
+		t.Errorf("상품 번호가 없으면 찾지 않아야 한다: %v, %+v", a.products.pids, a.st.updated)
 	}
 }

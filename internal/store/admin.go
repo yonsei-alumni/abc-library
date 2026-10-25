@@ -153,6 +153,7 @@ func (s *Store) UpdateBook(ctx context.Context, b book.Book) error {
 			Set("publisher = ?", b.Publisher).
 			Set("isbn13 = nullif(?, '')", b.ISBN13).
 			Set("kyobo_pid = nullif(?, '')", b.KyoboPID).
+			Set("kyobo_barcode = nullif(?, '')", b.KyoboBarcode).
 			Set("edited_at = now()").
 			Set("updated_at = now()").
 			Where("id = ?", b.ID).
@@ -209,7 +210,7 @@ func (s *Store) MergeBook(ctx context.Context, from, into int64) error {
 		if _, err := tx.NewRaw(`DELETE FROM books WHERE id = ?`, from).Exec(ctx); err != nil {
 			return err
 		}
-		return fillMissingInfo(ctx, tx, into, book.Book{ISBN13: src.ISBN13, KyoboPID: src.KyoboPID, Publisher: src.Publisher})
+		return fillMissingInfo(ctx, tx, into, book.Book{ISBN13: src.ISBN13, KyoboPID: src.KyoboPID, KyoboBarcode: src.Barcode, Publisher: src.Publisher})
 	})
 }
 

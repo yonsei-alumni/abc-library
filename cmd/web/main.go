@@ -15,6 +15,7 @@ import (
 
 	"github.com/yonsei-alumni/abc-library/internal/auth"
 	"github.com/yonsei-alumni/abc-library/internal/config"
+	"github.com/yonsei-alumni/abc-library/internal/kyobo"
 	"github.com/yonsei-alumni/abc-library/internal/store"
 	"github.com/yonsei-alumni/abc-library/internal/web"
 )
@@ -80,7 +81,7 @@ func run(log *slog.Logger) error {
 // USER_ID_SECRET이 없으면 관리자 로그인만 쓴다.
 func webConfig(port string) (web.Config, error) {
 	siteURL := strings.TrimRight(config.Get("SITE_URL", "http://localhost:"+port), "/")
-	cfg := web.Config{BandNo: config.BandNo(), SiteURL: siteURL}
+	cfg := web.Config{BandNo: config.BandNo(), SiteURL: siteURL, Products: kyobo.NewClient()}
 	clientID := os.Getenv("GOOGLE_CLIENT_ID")
 	if clientID == "" {
 		return cfg, nil

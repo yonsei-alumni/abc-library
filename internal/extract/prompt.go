@@ -23,7 +23,9 @@ func systemPrompt(tags book.TagList) string {
 - 책마다 search_kyobo 도구로 교보문고를 검색해서 ISBN-13을 확인한다. 검색어는 제목과 저자로 만들고, 결과가 없으면 제목만으로 다시 검색한다.
 - isbn13에는 검색 결과에 나온 값만 그대로 넣는다. 게시글의 책과 같은 책인지 확신할 수 없으면 빈 문자열로 둔다.
 - 링크 뒤에 '→ 교보문고 상품'이 붙어 있으면 글쓴이가 가리킨 교보문고 상품이고, 그 isbn13도 검색 결과로 친다.
-  그 링크가 가리키는 책이면 검색 결과와 아래 여러 권, 판본 규칙보다 이 isbn13을 먼저 고른다.
+  그 링크가 가리키는 책이면 검색 결과와 아래 여러 권, 판본 규칙보다 이 상품을 먼저 고른다.
+  kyobo_pid에 그 상품 번호를, isbn13에 그 isbn13을 넣는다. 잡지처럼 isbn13이 없음이면 isbn13은 빈 문자열로 둔다.
+- 그 밖의 책은 kyobo_pid를 빈 문자열로 둔다.
 - 시리즈나 상·하권처럼 여러 권으로 나온 책은 한 언급(본문이나 댓글 하나)에서 책 하나로 넣는다. 권마다 따로 넣지 않는다. ISBN은 다음 순서로 고른다.
   1. 언급이 특정 권을 가리키면 그 권을 고른다. '1, 2권을 읽었다'처럼 여러 권을 짚으면 그중 가장 앞선 권을 고른다.
   2. 특정 권을 가리키지 않으면(시리즈 이름만 말하거나 링크만 공유한 경우 포함), 교보문고에 합본이나 세트 상품(제목에 '합본', '세트', '전 N권', '1~3권' 등이 붙은 것)이 있으면 그 ISBN을 고른다.
@@ -77,12 +79,16 @@ func resultSchema(tags book.TagList) map[string]any {
 	return object([]string{"books"}, map[string]any{
 		"books": map[string]any{
 			"type": "array",
-			"items": object([]string{"title", "authors", "isbn13", "tags", "post", "comments", "unrelated_links"}, map[string]any{
+			"items": object([]string{"title", "authors", "isbn13", "kyobo_pid", "tags", "post", "comments", "unrelated_links"}, map[string]any{
 				"title":   str,
 				"authors": map[string]any{"type": "array", "items": str},
 				"isbn13": map[string]any{
 					"type":        "string",
 					"description": "search_kyobo 결과에 나온 ISBN-13. 확정하지 못하면 빈 문자열",
+				},
+				"kyobo_pid": map[string]any{
+					"type":        "string",
+					"description": "링크 뒤에 붙은 교보문고 상품의 상품 번호. 그 상품이 아니면 빈 문자열",
 				},
 				"tags": map[string]any{
 					"type":  "array",

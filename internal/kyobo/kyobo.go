@@ -20,9 +20,11 @@ import (
 
 const userAgent = "abc-library/0.1 (+https://github.com/yonsei-alumni/abc-library)"
 
-// Edition은 교보문고 검색 결과의 판본 하나다.
+// Edition은 교보문고 검색 결과의 판본 하나다. 잡지처럼 ISBN-13이 없는 상품은 ISBN13이 비어 있다.
 type Edition struct {
-	PID       string   `json:"-"`
+	PID string `json:"-"`
+	// Barcode는 상품의 바코드다. 일반 도서는 ISBN-13과 같고, 표지 이미지 주소에 쓴다.
+	Barcode   string   `json:"-"`
 	ISBN13    string   `json:"isbn13"`
 	Title     string   `json:"title"`
 	Authors   []string `json:"authors"`
@@ -52,26 +54,47 @@ func NewClient() *Client {
 
 // Search는 검색어로 국내외 도서 판본을 찾는다. ISBN-13이 없는 상품(eBook 등)은 뺀다.
 func (c *Client) Search(ctx context.Context, query string) ([]Edition, error) {
+	page, err := c.fetch(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSearch(page), nil
+}
+
+// Product는 상품 번호로 검색해서 그 상품을 찾는다. 상품 번호로 검색하면 그 상품이 나온다.
+// 잡지처럼 ISBN-13이 없는 상품도 돌려준다. 찾지 못하면 ok가 거짓이다.
+func (c *Client) Product(ctx context.Context, pid string) (ed Edition, ok bool, err error) {
+	page, err := c.fetch(ctx, pid)
+	if err != nil {
+		return Edition{}, false, err
+	}
+	for _, ed := range parseItems(page) {
+		if ed.PID == pid {
+			return ed, true, nil
+		}
+	}
+	return Edition{}, false, nil
+}
+
+// fetch는 통합 검색 결과 HTML을 받는다.
+func (c *Client) fetch(ctx context.Context, query string) (string, error) {
 	c.wait()
 	q := url.Values{"keyword": {query}, "gbCode": {"TOT"}, "target": {"total"}}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+"?"+q.Encode(), nil)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 	req.Header.Set("User-Agent", userAgent)
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("교보문고 검색 요청 실패: %w", err)
+		return "", fmt.Errorf("교보문고 검색 요청 실패: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("교보문고 검색 응답 코드 %d", resp.StatusCode)
+		return "", fmt.Errorf("교보문고 검색 응답 코드 %d", resp.StatusCode)
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 5<<20))
-	if err != nil {
-		return nil, err
-	}
-	return ParseSearch(string(body)), nil
+	return string(body), err
 }
 
 func (c *Client) wait() {
@@ -95,11 +118,24 @@ var (
 	dateRe    = regexp.MustCompile(`<span class="date">\s*([^<]+?)\s*</span>`)
 )
 
-// ParseSearch는 검색 결과 HTML에서 판본 목록을 읽는다.
+// ParseSearch는 검색 결과 HTML에서 ISBN-13이 있는 판본 목록을 읽는다.
 func ParseSearch(page string) []Edition {
-	starts := itemStart.FindAllStringIndex(page, -1)
 	var eds []Edition
 	seen := map[string]bool{}
+	for _, ed := range parseItems(page) {
+		if ed.ISBN13 == "" || seen[ed.ISBN13] {
+			continue
+		}
+		seen[ed.ISBN13] = true
+		eds = append(eds, ed)
+	}
+	return eds
+}
+
+// parseItems는 검색 결과 HTML의 상품을 모두 읽는다. 바코드가 ISBN-13이 아니면 ISBN13을 비운다.
+func parseItems(page string) []Edition {
+	starts := itemStart.FindAllStringIndex(page, -1)
+	var eds []Edition
 	for i, s := range starts {
 		end := len(page)
 		if i+1 < len(starts) {
@@ -109,7 +145,7 @@ func ParseSearch(page string) []Edition {
 		item := comment.ReplaceAllString(page[s[0]:end], "")
 		ed := Edition{
 			PID:       first(pidRe, item),
-			ISBN13:    first(bidRe, item),
+			Barcode:   first(bidRe, item),
 			Title:     first(titleRe, item),
 			Category:  first(catRe, item),
 			Publisher: first(pubRe, item),
@@ -120,10 +156,12 @@ func ParseSearch(page string) []Edition {
 				ed.Authors = append(ed.Authors, strings.TrimSpace(html.UnescapeString(m[1])))
 			}
 		}
-		if !book.ValidISBN13(ed.ISBN13) || ed.Title == "" || seen[ed.ISBN13] {
+		if book.ValidISBN13(ed.Barcode) {
+			ed.ISBN13 = ed.Barcode
+		}
+		if ed.PID == "" || ed.Title == "" {
 			continue
 		}
-		seen[ed.ISBN13] = true
 		eds = append(eds, ed)
 	}
 	return eds
@@ -173,7 +211,8 @@ func SearchURL(query string) string {
 	return "https://search.kyobobook.co.kr/search?" + url.Values{"keyword": {query}}.Encode()
 }
 
-// CoverURL은 교보문고가 ISBN으로 제공하는 표지 이미지 주소다. width는 픽셀 단위 너비다.
-func CoverURL(isbn13 string, width int) string {
-	return fmt.Sprintf("https://contents.kyobobook.co.kr/sih/fit-in/%dx0/pdt/%s.jpg", width, url.PathEscape(isbn13))
+// CoverURL은 교보문고가 바코드(일반 도서는 ISBN)로 제공하는 표지 이미지 주소다. width는 픽셀 단위 너비다.
+// 상품 번호로는 표지를 주지 않고 '이미지 없음' 그림을 준다.
+func CoverURL(barcode string, width int) string {
+	return fmt.Sprintf("https://contents.kyobobook.co.kr/sih/fit-in/%dx0/pdt/%s.jpg", width, url.PathEscape(barcode))
 }

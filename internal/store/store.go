@@ -151,6 +151,7 @@ type bookRow struct {
 	Authors   []string  `bun:",array"`
 	Publisher string    `bun:",notnull"`
 	KyoboPID  string    `bun:"kyobo_pid,nullzero"`
+	Barcode   string    `bun:"kyobo_barcode,nullzero"`
 	UpdatedAt time.Time `bun:",nullzero,notnull,default:current_timestamp"`
 }
 
@@ -162,20 +163,21 @@ type bookView struct {
 	Authors   []string `bun:"authors,array"`
 	Publisher string   `bun:"publisher"`
 	KyoboPID  string   `bun:"kyobo_pid"`
+	Barcode   string   `bun:"kyobo_barcode"`
 	Tags      []string `bun:"tags,array"`
 }
 
 func (v bookView) toBook() book.Book {
 	return book.Book{
 		ID: v.ID, ISBN13: v.ISBN13, Title: v.Title, Authors: v.Authors,
-		Publisher: v.Publisher, KyoboPID: v.KyoboPID, Tags: v.Tags,
+		Publisher: v.Publisher, KyoboPID: v.KyoboPID, KyoboBarcode: v.Barcode, Tags: v.Tags,
 	}
 }
 
 // bookColumns는 bookView로 읽을 책 컬럼이다. 테이블 별칭은 b다.
 // 태그는 태그 목록의 순서(모임 주제가 먼저)로 늘어놓는다.
 const bookColumns = `b.id, coalesce(b.isbn13, '') AS isbn13, b.title, b.authors, b.publisher,
-	coalesce(b.kyobo_pid, '') AS kyobo_pid,
+	coalesce(b.kyobo_pid, '') AS kyobo_pid, coalesce(b.kyobo_barcode, '') AS kyobo_barcode,
 	ARRAY(SELECT t.tag FROM book_tags t JOIN tags g ON g.name = t.tag WHERE t.book_id = b.id ` + tagOrder + `) AS tags`
 
 // tagOrder는 tags 테이블(별칭 g)의 태그를 정해진 순서로 늘어놓는다.
@@ -344,7 +346,7 @@ func upsertBook(ctx context.Context, tx bun.Tx, b book.Book) (int64, error) {
 	var id int64
 	switch {
 	case len(found) == 0:
-		row := &bookRow{ISBN13: b.ISBN13, Title: b.Title, Authors: nonNil(b.Authors), Publisher: b.Publisher, KyoboPID: b.KyoboPID}
+		row := &bookRow{ISBN13: b.ISBN13, Title: b.Title, Authors: nonNil(b.Authors), Publisher: b.Publisher, KyoboPID: b.KyoboPID, Barcode: b.KyoboBarcode}
 		if _, err := tx.NewInsert().Model(row).Returning("id").Exec(ctx); err != nil {
 			return 0, err
 		}
@@ -367,11 +369,12 @@ func upsertBook(ctx context.Context, tx bun.Tx, b book.Book) (int64, error) {
 	return id, addKeys(ctx, tx, id, keys)
 }
 
-// fillMissingInfo는 책에 비어 있는 ISBN, 교보문고 상품 번호, 출판사만 from의 값으로 채운다. 이미 있는 값은 바꾸지 않는다.
+// fillMissingInfo는 책에 비어 있는 ISBN, 교보문고 상품 번호와 바코드, 출판사만 from의 값으로 채운다. 이미 있는 값은 바꾸지 않는다.
 func fillMissingInfo(ctx context.Context, db bun.IDB, id int64, from book.Book) error {
 	_, err := db.NewUpdate().Model((*bookRow)(nil)).
 		Set("isbn13 = coalesce(isbn13, nullif(?, ''))", from.ISBN13).
 		Set("kyobo_pid = coalesce(kyobo_pid, nullif(?, ''))", from.KyoboPID).
+		Set("kyobo_barcode = coalesce(kyobo_barcode, nullif(?, ''))", from.KyoboBarcode).
 		Set("publisher = CASE WHEN publisher = '' THEN ? ELSE publisher END", from.Publisher).
 		Set("updated_at = now()").
 		Where("id = ?", id).
