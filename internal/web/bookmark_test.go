@@ -102,8 +102,11 @@ func (f *fakeStore) MoveCategory(_ context.Context, userID, id int64, up bool) e
 	return f.record("MoveCategory %d %d %v", userID, id, up)
 }
 
-func (f *fakeStore) ReorderBookmarks(_ context.Context, userID int64, bookIDs []int64) error {
-	return f.record("ReorderBookmarks %d %v", userID, bookIDs)
+func (f *fakeStore) ReorderCategoryBooks(ctx context.Context, userID, categoryID int64, bookIDs []int64) error {
+	if _, err := f.Category(ctx, userID, categoryID); err != nil {
+		return err
+	}
+	return f.record("ReorderCategoryBooks %d %d %v", userID, categoryID, bookIDs)
 }
 
 func (f *fakeStore) AddCategory(_ context.Context, userID int64, c book.Category) (int64, error) {
@@ -316,25 +319,44 @@ func TestBookmarkPagesNeedUser(t *testing.T) {
 	expectCalls(t, a.st)
 }
 
-func TestReorderBookmarks(t *testing.T) {
+func TestReorderCategoryBooks(t *testing.T) {
 	a := newAdminSite(t)
 	uid, me := a.member("hash-me")
-	a.st.marks = map[[2]int64][]int64{{uid, 1}: nil, {uid, 2}: nil}
-	body := html.UnescapeString(a.get("/me", me).Body.String())
-	assertContains(t, body, `<ul class="shelf sortable" data-order-url="/me/bookmarks/order">`, `data-id="1"`, `data-id="2"`,
-		`class="drag-handle"`, "당신 인생의 이야기 순서 옮기기", "끌어서 순서를 바꿉니다")
+	a.st.cats = []book.Category{{ID: 101, UserID: uid, Title: "올해의 SF", Code: "sfq"}}
+	a.st.marks = map[[2]int64][]int64{{uid, 1}: {101}, {uid, 2}: {101}}
 
-	rec := a.post("/me/bookmarks/order", url.Values{"book": {"2", "x", "1"}}, me)
+	// 책 순서는 카테고리 화면에서만 바꾸고, 내 북마크에는 최근에 북마크한 순서로 보인다.
+	body := html.UnescapeString(a.get("/me/categories/101", me).Body.String())
+	assertContains(t, body, `<ul class="shelf sortable" data-order-url="/me/categories/101/order">`, `data-id="1"`, `data-id="2"`,
+		`class="drag-handle"`, "당신 인생의 이야기 순서 옮기기", "이 순서는 이 카테고리에만 쓰이고")
+	body = a.get("/me", me).Body.String()
+	assertContains(t, body, "최근에 북마크한 책이 먼저 나옵니다")
+	if strings.Contains(body, "drag-handle") || strings.Contains(body, "sortable") {
+		t.Error("내 북마크에서는 순서를 바꾸지 않는다")
+	}
+
+	rec := a.post("/me/categories/101/order", url.Values{"book": {"2", "x", "1"}}, me)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("code = %d", rec.Code)
 	}
-	expectCalls(t, a.st, fmt.Sprintf("ReorderBookmarks %d [2 1]", uid))
+	expectCalls(t, a.st, fmt.Sprintf("ReorderCategoryBooks %d 101 [2 1]", uid))
 
-	// 로그인하지 않았거나 다른 사이트에서 보낸 요청은 받지 않는다.
-	if rec := a.post("/me/bookmarks/order", url.Values{"book": {"1"}}); rec.Code != http.StatusForbidden {
-		t.Errorf("로그인하지 않은 요청 code = %d", rec.Code)
+	// 다른 사용자의 카테고리는 없는 것과 같다. 로그인하지 않았거나 다른 사이트에서 보낸 요청은 받지 않는다.
+	_, other := a.member("hash-other")
+	for _, tc := range []struct {
+		path    string
+		cookies []*http.Cookie
+		code    int
+	}{
+		{"/me/categories/101/order", []*http.Cookie{other}, http.StatusNotFound},
+		{"/me/categories/x/order", []*http.Cookie{me}, http.StatusNotFound},
+		{"/me/categories/101/order", nil, http.StatusForbidden},
+	} {
+		if rec := a.post(tc.path, url.Values{"book": {"1"}}, tc.cookies...); rec.Code != tc.code {
+			t.Errorf("%s %v: code = %d", tc.path, tc.cookies, rec.Code)
+		}
 	}
-	req := httptest.NewRequest(http.MethodPost, "/me/bookmarks/order", strings.NewReader("book=1"))
+	req := httptest.NewRequest(http.MethodPost, "/me/categories/101/order", strings.NewReader("book=1"))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Sec-Fetch-Site", "cross-site")
 	if rec := a.do(req, me); rec.Code != http.StatusForbidden {
@@ -406,12 +428,9 @@ func TestCategoryPages(t *testing.T) {
 	}
 	expectCalls(t, a.st)
 
-	// 책 순서는 내 북마크에서 바꾸므로 카테고리 화면에는 순서 버튼이 없다.
+	// 카테고리 화면에서 책을 끌어서 순서를 바꾼다.
 	body = a.get("/me/categories/100", me).Body.String()
-	assertContains(t, body, "책 순서는", `href="/me">내 북마크</a>에서 끌어서 바꿉니다`)
-	if strings.Contains(body, "drag-handle") || strings.Contains(body, "/move") {
-		t.Error("카테고리 화면에 책 순서 버튼이 있으면 안 된다")
-	}
+	assertContains(t, body, `data-order-url="/me/categories/100/order"`, `class="drag-handle"`)
 
 	expectRedirect(t, a.post("/me/categories/100/delete", nil, me), "/me?done=category-deleted")
 	expectCalls(t, a.st, fmt.Sprintf("DeleteCategory %d 100", uid))

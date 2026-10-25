@@ -23,7 +23,7 @@ func (s *Server) bookmarkRoutes(mux *http.ServeMux) {
 	user("GET /me/categories/{id}", s.myCategory)
 	user("POST /me/categories/{id}", s.saveCategory)
 	user("POST /me/categories/{id}/delete", s.deleteCategory)
-	user("POST /me/bookmarks/order", s.reorderBookmarks)
+	user("POST /me/categories/{id}/order", s.reorderCategory)
 	user("POST /me/bookmarks/{id}", s.saveBookmark)
 	user("POST /me/bookmarks/{id}/delete", s.deleteBookmark)
 	user("POST /me/delete", s.deleteAccount)
@@ -104,16 +104,26 @@ func (s *Server) saveBookmark(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// reorderBookmarks는 내 북마크 화면에서 끌어서 바꾼 순서를 저장한다. 화면의 스크립트(app.js)가 부른다.
-func (s *Server) reorderBookmarks(w http.ResponseWriter, r *http.Request) {
+// reorderCategory는 카테고리 화면에서 끌어서 바꾼 책 순서를 저장한다. 화면의 스크립트(app.js)가 부른다.
+// 책 순서는 카테고리마다 따로이고, 공개 화면도 이 순서를 따른다.
+func (s *Server) reorderCategory(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathID(r)
+	if !ok {
+		s.notFound(w, r)
+		return
+	}
 	if !s.parseForm(w, r) {
 		return
 	}
-	if err := s.store.ReorderBookmarks(r.Context(), userID(r), formIDs(r, "book")); err != nil {
+	err := s.store.ReorderCategoryBooks(r.Context(), userID(r), id, formIDs(r, "book"))
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		s.notFound(w, r)
+	case err != nil:
 		s.fail(w, r, err)
-		return
+	default:
+		w.WriteHeader(http.StatusNoContent)
 	}
-	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) deleteBookmark(w http.ResponseWriter, r *http.Request) {

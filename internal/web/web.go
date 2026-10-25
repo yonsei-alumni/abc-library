@@ -71,7 +71,7 @@ type Store interface {
 	Bookmark(ctx context.Context, userID, bookID int64) (bool, []int64, error)
 	SetBookmark(ctx context.Context, userID, bookID int64, categoryIDs []int64) error
 	DeleteBookmark(ctx context.Context, userID, bookID int64) error
-	ReorderBookmarks(ctx context.Context, userID int64, bookIDs []int64) error
+	ReorderCategoryBooks(ctx context.Context, userID, categoryID int64, bookIDs []int64) error
 	Bookmarks(ctx context.Context, userID int64) ([]book.Bookmark, error)
 }
 

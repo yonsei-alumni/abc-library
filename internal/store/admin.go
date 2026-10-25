@@ -218,10 +218,10 @@ func (s *Store) MergeBook(ctx context.Context, from, into int64) error {
 			`INSERT INTO book_tags (book_id, tag) SELECT ?, tag FROM book_tags WHERE book_id = ? ON CONFLICT DO NOTHING`,
 			`UPDATE book_keys SET book_id = ? WHERE book_id = ?`,
 			// 두 책을 모두 북마크한 사용자도 있으므로 옮기지 않고 복사한다. from의 것은 책을 지울 때 함께 지워진다.
-			`INSERT INTO bookmarks (user_id, book_id, created_at, position)
-			 SELECT user_id, ?, created_at, position FROM bookmarks WHERE book_id = ? ON CONFLICT DO NOTHING`,
-			`INSERT INTO bookmark_category_books (category_id, user_id, book_id, created_at)
-			 SELECT category_id, user_id, ?, created_at FROM bookmark_category_books WHERE book_id = ? ON CONFLICT DO NOTHING`,
+			`INSERT INTO bookmarks (user_id, book_id, created_at)
+			 SELECT user_id, ?, created_at FROM bookmarks WHERE book_id = ? ON CONFLICT DO NOTHING`,
+			`INSERT INTO bookmark_category_books (category_id, user_id, book_id, created_at, position)
+			 SELECT category_id, user_id, ?, created_at, position FROM bookmark_category_books WHERE book_id = ? ON CONFLICT DO NOTHING`,
 		} {
 			if _, err := tx.NewRaw(q, into, from).Exec(ctx); err != nil {
 				return err

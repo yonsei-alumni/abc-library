@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/yonsei-alumni/abc-library/internal/book"
@@ -211,17 +212,27 @@ func titles(bs []book.Book) []string {
 	return ts
 }
 
-func TestReorderBookmarks(t *testing.T) {
+func TestReorderCategoryBooks(t *testing.T) {
 	s := openTestStore(t)
 	ctx := context.Background()
 	books := saveBooks(t, s, "가", "나", "다", "라")
 	me, _ := s.UserID(ctx, "hash-me")
 	other, _ := s.UserID(ctx, "hash-other")
-	cat, _ := s.AddCategory(ctx, me, book.Category{Title: "모음"})
+	sf, _ := s.AddCategory(ctx, me, book.Category{Title: "SF"})
+	later, _ := s.AddCategory(ctx, me, book.Category{Title: "나중에"})
+	theirs, _ := s.AddCategory(ctx, other, book.Category{Title: "남의 카테고리"})
 	for _, id := range books[:3] {
-		if err := s.SetBookmark(ctx, me, id, []int64{cat}); err != nil {
+		if err := s.SetBookmark(ctx, me, id, []int64{sf, later}); err != nil {
 			t.Fatal(err)
 		}
+	}
+	in := func(cat int64) []string {
+		t.Helper()
+		bs, err := s.CategoryBooks(ctx, cat)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return titles(bs)
 	}
 	marks := func() []string {
 		t.Helper()
@@ -235,61 +246,90 @@ func TestReorderBookmarks(t *testing.T) {
 		}
 		return ts
 	}
-	inCategory := func() []string {
-		t.Helper()
-		bs, err := s.CategoryBooks(ctx, cat)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return titles(bs)
-	}
-	// 새로 북마크한 책이 맨 앞에 온다.
-	if got := marks(); !slices.Equal(got, []string{"다", "나", "가"}) {
+	// 카테고리에 새로 넣은 책이 맨 앞에 온다.
+	if got := in(sf); !slices.Equal(got, []string{"다", "나", "가"}) {
 		t.Fatalf("처음 순서 = %v", got)
 	}
-	if err := s.ReorderBookmarks(ctx, me, []int64{books[0], books[2], books[1]}); err != nil {
+	if err := s.ReorderCategoryBooks(ctx, me, sf, []int64{books[0], books[2], books[1]}); err != nil {
 		t.Fatal(err)
 	}
-	// 카테고리도 북마크 순서를 따른다.
-	if got, cat := marks(), inCategory(); !slices.Equal(got, []string{"가", "다", "나"}) || !slices.Equal(cat, got) {
-		t.Errorf("바꾼 순서 = %v, 카테고리 = %v", got, cat)
+	// 바꾼 순서는 그 카테고리에만 쓰이고, 다른 카테고리와 내 북마크(최근에 북마크한 순서)는 그대로다.
+	if got := in(sf); !slices.Equal(got, []string{"가", "다", "나"}) {
+		t.Errorf("바꾼 순서 = %v", got)
 	}
-	// 북마크하지 않은 책, 겹친 번호는 버리고, 빠진 북마크는 원래 순서대로 뒤에 둔다.
-	if err := s.ReorderBookmarks(ctx, me, []int64{books[1], books[3], 999999, books[1]}); err != nil {
+	if got, all := in(later), marks(); !slices.Equal(got, []string{"다", "나", "가"}) || !slices.Equal(all, []string{"다", "나", "가"}) {
+		t.Errorf("다른 카테고리 = %v, 내 북마크 = %v", got, all)
+	}
+	// 카테고리에 없는 책과 겹친 번호는 버리고, 빠진 책은 원래 순서대로 뒤에 둔다.
+	if err := s.ReorderCategoryBooks(ctx, me, sf, []int64{books[1], books[3], 999999, books[1]}); err != nil {
 		t.Fatal(err)
 	}
-	if got := marks(); !slices.Equal(got, []string{"나", "가", "다"}) {
+	if got := in(sf); !slices.Equal(got, []string{"나", "가", "다"}) {
 		t.Errorf("일부만 보낸 순서 = %v", got)
 	}
-	// 새로 북마크한 책은 맨 앞에 오고, 카테고리를 다시 저장해도 순서는 그대로다.
-	if err := s.SetBookmark(ctx, me, books[3], nil); err != nil {
+	// 새로 넣은 책은 맨 앞에 오고, 카테고리를 다시 저장해도 순서는 그대로다.
+	if err := s.SetBookmark(ctx, me, books[3], []int64{sf}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetBookmark(ctx, me, books[0], []int64{cat}); err != nil {
+	if err := s.SetBookmark(ctx, me, books[0], []int64{sf, later}); err != nil {
 		t.Fatal(err)
 	}
-	if got := marks(); !slices.Equal(got, []string{"라", "나", "가", "다"}) {
+	if got := in(sf); !slices.Equal(got, []string{"라", "나", "가", "다"}) {
 		t.Errorf("더한 뒤 순서 = %v", got)
 	}
-	// 다른 사용자의 북마크 순서는 바뀌지 않는다.
-	if err := s.SetBookmark(ctx, other, books[0], nil); err != nil {
-		t.Fatal(err)
+	// 다른 사용자의 카테고리는 순서를 바꿀 수 없다.
+	for _, tc := range []struct{ user, cat int64 }{{other, sf}, {me, theirs}, {me, 999999}} {
+		if err := s.ReorderCategoryBooks(ctx, tc.user, tc.cat, []int64{books[2]}); !errors.Is(err, ErrNotFound) {
+			t.Errorf("사용자 %d의 카테고리 %d 순서 바꾸기 = %v", tc.user, tc.cat, err)
+		}
 	}
-	if err := s.ReorderBookmarks(ctx, other, []int64{books[2], books[1]}); err != nil {
-		t.Fatal(err)
-	}
-	if got := marks(); !slices.Equal(got, []string{"라", "나", "가", "다"}) {
-		t.Errorf("다른 사용자가 바꾼 뒤 내 순서 = %v", got)
+	if got := in(sf); !slices.Equal(got, []string{"라", "나", "가", "다"}) {
+		t.Errorf("다른 사용자가 바꾼 뒤 순서 = %v", got)
 	}
 	// 관리자가 언급을 모두 지운 책은 건너뛰고 보이는 책끼리 순서를 매긴다.
 	if err := s.DeleteBook(ctx, books[1]); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.ReorderBookmarks(ctx, me, []int64{books[2], books[3], books[0]}); err != nil {
+	if err := s.ReorderCategoryBooks(ctx, me, sf, []int64{books[2], books[3], books[0]}); err != nil {
 		t.Fatal(err)
 	}
-	if got := marks(); !slices.Equal(got, []string{"다", "라", "가"}) {
+	if got := in(sf); !slices.Equal(got, []string{"다", "라", "가"}) {
 		t.Errorf("숨긴 책을 건너뛴 순서 = %v", got)
+	}
+}
+
+func TestCategoryBookPositionMigration(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	books := saveBooks(t, s, "가", "나", "다")
+	me, _ := s.UserID(ctx, "hash-me")
+	cat, _ := s.AddCategory(ctx, me, book.Category{Title: "모음"})
+	for _, id := range books {
+		if err := s.SetBookmark(ctx, me, id, []int64{cat}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// 마이그레이션 전에는 내 북마크에서 정한 순서(bookmarks.position)를 카테고리도 따랐다.
+	for i, id := range []int64{books[1], books[2], books[0]} {
+		if _, err := s.db.NewRaw(`UPDATE bookmarks SET position = ? WHERE user_id = ? AND book_id = ?`, i+1, me, id).Exec(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.db.NewRaw(`UPDATE bookmark_category_books SET position = 0`).Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+	sql, err := migrationFiles.ReadFile("migrations/20261025000006_category_book_position.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 열은 이미 있으므로 순서를 채우는 부분만 실행한다.
+	_, fill, _ := strings.Cut(string(sql), "--bun:split")
+	if _, err := s.db.ExecContext(ctx, fill); err != nil {
+		t.Fatal(err)
+	}
+	bs, err := s.CategoryBooks(ctx, cat)
+	if err != nil || !slices.Equal(titles(bs), []string{"나", "다", "가"}) {
+		t.Errorf("마이그레이션 뒤 카테고리 순서 = %v, %v", titles(bs), err)
 	}
 }
 

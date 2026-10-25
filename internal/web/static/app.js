@@ -56,7 +56,7 @@ document.addEventListener("DOMContentLoaded", () => {
   for (const img of document.querySelectorAll(".cover img")) if (img.complete && img.currentSrc && img.naturalWidth === 0) blankCover(img);
 });
 
-// 내 북마크의 책을 끌어서 순서를 바꾼다. 마우스와 터치를 함께 다루려고 포인터 이벤트를 쓰고,
+// 카테고리 화면의 책을 끌어서 순서를 바꾼다. 마우스와 터치를 함께 다루려고 포인터 이벤트를 쓰고,
 // 키보드로는 ⠿에서 방향키로 옮긴다. 바꾼 순서는 목록의 data-order-url로 보낸다.
 // hx-boost로 화면이 바뀌어도 동작하도록 document에서 이벤트를 받는다.
 let drag = null;
