@@ -35,3 +35,14 @@ func TestProductWithoutISBN(t *testing.T) {
 		t.Errorf("판본 = %+v", ed)
 	}
 }
+
+// 전자책도 상품 번호로 찾고, 영문자가 든 바코드로 표지를 받는다.
+func TestEbookProduct(t *testing.T) {
+	ed, ok, err := NewClient().Product(context.Background(), "E000003412895")
+	if err != nil || !ok {
+		t.Fatalf("전자책을 찾지 못했다: %v, %v", ok, err)
+	}
+	if ed.ISBN13 != "" || ed.Barcode != "480D180102360" || ed.Title != "아스타틴" {
+		t.Errorf("판본 = %+v", ed)
+	}
+}

@@ -110,12 +110,13 @@ var (
 	itemStart = regexp.MustCompile(`<li class="prod_item"`)
 	comment   = regexp.MustCompile(`(?s)<!--.*?-->`)
 	pidRe     = regexp.MustCompile(`data-pid="([A-Z]\d+)"`)
-	bidRe     = regexp.MustCompile(`data-bid="(\d+)"`)
-	titleRe   = regexp.MustCompile(`<span id="cmdtName_[A-Z]\d+">([^<]+)</span>`)
-	catRe     = regexp.MustCompile(`<span class="prod_category">\[([^\]]+)\]</span>`)
-	authorRe  = regexp.MustCompile(`class="author[^"]*">([^<]+)</a>\s*<span class="type">([^<]+)</span>`)
-	pubRe     = regexp.MustCompile(`pbcm[^>]*>([^<]+)</a>`)
-	dateRe    = regexp.MustCompile(`<span class="date">\s*([^<]+?)\s*</span>`)
+	// 전자책 바코드에는 영문자가 들어 있다(예: 480D180102360).
+	bidRe    = regexp.MustCompile(`data-bid="([0-9A-Za-z]+)"`)
+	titleRe  = regexp.MustCompile(`<span id="cmdtName_[A-Z]\d+">([^<]+)</span>`)
+	catRe    = regexp.MustCompile(`<span class="prod_category">\[([^\]]+)\]</span>`)
+	authorRe = regexp.MustCompile(`class="author[^"]*">([^<]+)</a>\s*<span class="type">([^<]+)</span>`)
+	pubRe    = regexp.MustCompile(`pbcm[^>]*>([^<]+)</a>`)
+	dateRe   = regexp.MustCompile(`<span class="date">\s*([^<]+?)\s*</span>`)
 )
 
 // ParseSearch는 검색 결과 HTML에서 ISBN-13이 있는 판본 목록을 읽는다.
@@ -185,25 +186,43 @@ func isAuthorRole(role string) bool {
 	return false
 }
 
-var productPath = regexp.MustCompile(`^/detail/([A-Z]\d+)/?$`)
+const (
+	productHost = "product.kyobobook.co.kr"
+	ebookHost   = "ebook-product.kyobobook.co.kr"
+)
 
-// ProductPID는 교보문고 상품 페이지 주소(https://product.kyobobook.co.kr/detail/S000001981838)의 상품 번호다.
+var (
+	productPath = regexp.MustCompile(`^/detail/([A-Z]\d+)/?$`)
+	ebookPath   = regexp.MustCompile(`^/dig/epd/ebook/(E\d+)/?$`)
+)
+
+// ProductPID는 교보문고 상품 페이지 주소(https://product.kyobobook.co.kr/detail/S000001981838)나
+// 전자책 상품 페이지 주소(https://ebook-product.kyobobook.co.kr/dig/epd/ebook/E000003412895)의 상품 번호다.
 // 상품 페이지 주소가 아니면 ok가 거짓이다.
 func ProductPID(raw string) (pid string, ok bool) {
 	u, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || !strings.EqualFold(u.Hostname(), "product.kyobobook.co.kr") {
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") {
 		return "", false
 	}
-	m := productPath.FindStringSubmatch(u.Path)
+	var m []string
+	switch strings.ToLower(u.Hostname()) {
+	case productHost:
+		m = productPath.FindStringSubmatch(u.Path)
+	case ebookHost:
+		m = ebookPath.FindStringSubmatch(u.Path)
+	}
 	if m == nil {
 		return "", false
 	}
 	return m[1], true
 }
 
-// ProductURL은 교보문고 상품 페이지 주소다.
+// ProductURL은 교보문고 상품 페이지 주소다. 전자책(상품 번호가 E로 시작)은 전자책 상품 페이지다.
 func ProductURL(pid string) string {
-	return "https://product.kyobobook.co.kr/detail/" + url.PathEscape(pid)
+	if strings.HasPrefix(pid, "E") {
+		return "https://" + ebookHost + "/dig/epd/ebook/" + url.PathEscape(pid)
+	}
+	return "https://" + productHost + "/detail/" + url.PathEscape(pid)
 }
 
 // SearchURL은 상품을 확정하지 못한 책을 교보문고에서 찾아보는 검색 주소다.

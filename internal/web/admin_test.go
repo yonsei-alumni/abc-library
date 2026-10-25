@@ -588,7 +588,7 @@ func TestAdminBookFillsBarcodeForProductWithoutISBN(t *testing.T) {
 	form := func(pid string) url.Values {
 		return url.Values{"title": {"한국 스켑틱 47호"}, "authors": {"스켑틱 협회"}, "isbn13": {""}, "kyobo_pid": {pid}}
 	}
-	assertContains(t, a.get("/admin/books/1", admin).Body.String(), "상품 번호만 넣으면 저장할 때 교보문고에서 바코드를 찾아")
+	assertContains(t, a.get("/admin/books/1", admin).Body.String(), "상품 번호(전자책은 E로 시작)만 넣으면 저장할 때 교보문고에서 바코드를 찾아")
 
 	expectRedirect(t, a.post("/admin/books/1", form(" S000221152938 "), admin), "/admin/books/1?done=book-saved")
 	if b := a.st.updated; b.KyoboPID != "S000221152938" || b.KyoboBarcode != "3904000631271" || b.ISBN13 != "" {

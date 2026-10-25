@@ -73,6 +73,19 @@ func TestProductKeepsItemsWithoutISBN(t *testing.T) {
 	}
 }
 
+func TestParseItemsReadsEbookBarcodeWithLetters(t *testing.T) {
+	page := `<li class="prod_item"><input data-pid="E000003412895" data-bid="480D180102360" />
+		<span id="cmdtName_E000003412895">아스타틴</span></li>`
+	eds := parseItems(page)
+	if len(eds) != 1 || eds[0].PID != "E000003412895" || eds[0].Barcode != "480D180102360" || eds[0].ISBN13 != "" {
+		t.Errorf("전자책 = %+v", eds)
+	}
+	// ISBN이 없으므로 제목 검색 결과에는 넣지 않는다.
+	if eds := ParseSearch(page); len(eds) != 0 {
+		t.Errorf("ISBN 없는 상품은 검색 결과에서 빼야 한다: %+v", eds)
+	}
+}
+
 func TestParseSearchEmpty(t *testing.T) {
 	if eds := ParseSearch("<html><body>검색 결과가 없습니다</body></html>"); len(eds) != 0 {
 		t.Errorf("결과가 없어야 한다: %+v", eds)
@@ -123,12 +136,16 @@ func TestProductPID(t *testing.T) {
 		"http://product.kyobobook.co.kr/detail/S000213812009/":                   "S000213812009",
 		"https://PRODUCT.kyobobook.co.kr/detail/S000213812009?utm_source=band#x": "S000213812009",
 		" https://product.kyobobook.co.kr/detail/S000213812009 ":                 "S000213812009",
+		"https://ebook-product.kyobobook.co.kr/dig/epd/ebook/E000003412895":      "E000003412895",
+		"https://ebook-product.kyobobook.co.kr/dig/epd/ebook/E000003412895/?a=1": "E000003412895",
 		// 상품 페이지가 아닌 주소와 잘못된 상품 번호는 뺀다.
 		"https://product.kyobobook.co.kr/detail/":                           "",
 		"https://product.kyobobook.co.kr/detail/s000213812009":              "",
 		"https://product.kyobobook.co.kr/detail/S000213812009/review":       "",
 		"https://product.kyobobook.co.kr/book/S000213812009":                "",
-		"https://ebook-product.kyobobook.co.kr/dig/epd/ebook/E000002956543": "",
+		"https://ebook-product.kyobobook.co.kr/dig/epd/ebook/S000002956543": "",
+		"https://ebook-product.kyobobook.co.kr/detail/E000002956543":        "",
+		"https://product.kyobobook.co.kr/dig/epd/ebook/E000002956543":       "",
 		"https://search.kyobobook.co.kr/search?keyword=S000213812009":       "",
 		"https://product.kyobobook.co.kr.example.com/detail/S000213812009":  "",
 		"javascript://product.kyobobook.co.kr/detail/S000213812009":         "",
@@ -144,6 +161,13 @@ func TestProductPID(t *testing.T) {
 
 func TestURLs(t *testing.T) {
 	if got := ProductURL("S000001981838"); got != "https://product.kyobobook.co.kr/detail/S000001981838" {
+		t.Error(got)
+	}
+	if got := ProductURL("E000003412895"); got != "https://ebook-product.kyobobook.co.kr/dig/epd/ebook/E000003412895" {
+		t.Error(got)
+	}
+	// 전자책 바코드에는 영문자가 들어 있다. 표지 주소에 그대로 쓴다.
+	if got := CoverURL("480D180102360", 200); got != "https://contents.kyobobook.co.kr/sih/fit-in/200x0/pdt/480D180102360.jpg" {
 		t.Error(got)
 	}
 	if got := CoverURL("9791196914806", 200); got != "https://contents.kyobobook.co.kr/sih/fit-in/200x0/pdt/9791196914806.jpg" {
