@@ -577,6 +577,21 @@ func (s *Store) Book(ctx context.Context, id int64) (book.Book, []book.Mention, 
 	return views[0].toBook(), mentions, nil
 }
 
+// FindBook은 배치가 같은 책을 찾는 키(ISBN, 작품 키)로 사이트에 보이는 책을 찾아 번호를 돌려준다.
+// 대화방 주간 요약이 책 상세 화면 링크를 붙일 때 쓴다. 없으면 ok가 거짓이다.
+func (s *Store) FindBook(ctx context.Context, b book.Book) (id int64, ok bool, err error) {
+	var ids []int64
+	err = s.db.NewRaw(`
+		SELECT b.id FROM books b JOIN book_keys k ON k.book_id = b.id
+		WHERE k.key IN (?) AND `+visibleBook+`
+		ORDER BY k.key LIKE 'isbn:%' DESC, b.id
+		LIMIT 1`, bun.List(bookKeys(b))).Scan(ctx, &ids)
+	if err != nil || len(ids) == 0 {
+		return 0, false, err
+	}
+	return ids[0], true, nil
+}
+
 // visibleMentions는 조건(언급의 별칭 m)에 맞는 언급 중 관리자가 지우지 않은 것을 오래된 순서로 돌려준다.
 // 화면에 보일 언급은 모두 여기서 읽는다.
 func (s *Store) visibleMentions(ctx context.Context, where string, args ...any) ([]book.Mention, error) {

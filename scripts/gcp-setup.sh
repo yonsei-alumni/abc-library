@@ -6,6 +6,8 @@
 # API, Artifact Registry 저장소, 서비스 계정, Secret Manager 비밀, GitHub Actions용
 # Workload Identity Federation을 만든다. 이미 있는 리소스는 건너뛰므로 다시 실행해도 된다.
 # db-pwd, claude-api-key 비밀에 버전이 없으면 DB_PWD, CLAUDE_API_KEY 환경 변수 값을 첫 버전으로 올린다.
+# 대화방 주간 요약의 비밀(kakao-sheet-url, kakao-sheet-token)도 KAKAO_SHEET_URL, KAKAO_SHEET_TOKEN 환경 변수가 있으면
+# 첫 버전으로 올린다.
 # gcp-env.sh에 GOOGLE_CLIENT_ID가 있으면 관리자 로그인용 비밀도 만든다. google-client-secret은
 # GOOGLE_CLIENT_SECRET 환경 변수 값을 올리고, session-secret은 임의의 값을 만들어 올린다.
 set -euo pipefail
@@ -81,6 +83,18 @@ if ! has_version "$BAND_STATE_SECRET"; then
   echo "  $BAND_STATE_SECRET: 버전이 없습니다. make band-secret으로 밴드 세션을 올리세요"
 fi
 
+# 대화방 주간 요약의 비밀. 환경 변수가 있으면 첫 버전으로 올리고, 없으면 나중에 올리라고 알린다.
+for pair in "$KAKAO_SHEET_URL_SECRET:KAKAO_SHEET_URL" "$KAKAO_SHEET_TOKEN_SECRET:KAKAO_SHEET_TOKEN"; do
+  secret="${pair%%:*}" var="${pair#*:}"
+  if [[ -n "${!var:-}" ]]; then
+    secret_from_env "$secret" "$var"
+  else
+    create_secret "$secret"
+    has_version "$secret" ||
+      echo "  $secret: 버전이 없습니다. printf '%s' \"\$$var\" | gcloud secrets versions add $secret --project $PROJECT --data-file=-"
+  fi
+done
+
 if [[ -n "$GOOGLE_CLIENT_ID" ]]; then
   secret_from_env "$GOOGLE_SECRET" GOOGLE_CLIENT_SECRET
   create_secret "$SESSION_SECRET_NAME"
@@ -106,6 +120,9 @@ grant_secret "$DB_PWD_SECRET" "$WEB_SA"
 grant_secret "$DB_PWD_SECRET" "$BATCH_SA"
 grant_secret "$BAND_STATE_SECRET" "$BATCH_SA"
 grant_secret "$CLAUDE_KEY_SECRET" "$BATCH_SA"
+for secret in "$KAKAO_SHEET_URL_SECRET" "$KAKAO_SHEET_TOKEN_SECRET"; do
+  grant_secret "$secret" "$BATCH_SA"
+done
 if [[ -n "$GOOGLE_CLIENT_ID" ]]; then
   grant_secret "$GOOGLE_SECRET" "$WEB_SA"
   grant_secret "$SESSION_SECRET_NAME" "$WEB_SA"

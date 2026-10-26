@@ -2,7 +2,7 @@
 # 이미지를 빌드해서 Artifact Registry에 올리고 Cloud Run에 배포한다.
 #
 #   scripts/deploy.sh web     웹 서버(Cloud Run 서비스)
-#   scripts/deploy.sh batch   일일 배치(Cloud Run Job)
+#   scripts/deploy.sh batch   일일 배치와 대화방 주간 요약(Cloud Run Job)
 #   scripts/deploy.sh web --if-changed   배포된 이미지의 커밋 이후 웹에 들어가는 파일이 바뀌었을 때만 배포한다
 #
 # 환경 변수와 비밀 값 연결은 서비스와 Job에 남아서 다음 배포에도 이어진다.
@@ -96,6 +96,8 @@ else
     [[ -n "${!name}" ]] && env_vars+=("${name}=${!name}")
   done
   secrets="DB_PWD=${DB_PWD_SECRET}:latest,${BAND_STATE_MOUNT}=${BAND_STATE_SECRET}:latest"
+  # 대화방 주간 요약(batch weekly)
+  secrets+=",KAKAO_SHEET_URL=${KAKAO_SHEET_URL_SECRET}:latest,KAKAO_SHEET_TOKEN=${KAKAO_SHEET_TOKEN_SECRET}:latest"
   # Workload Identity Federation 값이 없으면 Claude API 키를 쓴다.
   [[ -z "$ANTHROPIC_FEDERATION_RULE_ID" ]] && secrets+=",CLAUDE_API_KEY=${CLAUDE_KEY_SECRET}:latest"
   # 자동 재시도는 하지 않는다. 실패한 글은 다음 날 배치가 다시 시도한다.

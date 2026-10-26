@@ -22,7 +22,13 @@ export CLAUDE_API_KEY=""
 # export USER_ID_SECRET=""
 # export SITE_URL="http://localhost:8080"
 
+# 대화방 주간 요약(batch weekly). 카카오톡 대화방 메시지를 모은 Google 스프레드시트의 Apps Script 웹 앱 주소(…/exec)와 토큰.
+# 시트와 웹 앱은 kakao-to-google-sheet 저장소에서 만든다. 요약은 BAND_STATE_PATH의 밴드 세션으로 밴드에 올린다.
+# export KAKAO_SHEET_URL=""
+# export KAKAO_SHEET_TOKEN=""
+
 # 선택 속성(기본값이 있음)
 # export BAND_NO="102765569"
 # export BAND_STATE_PATH="band-state.json"
 # export PORT="8080"
+# export KAKAO_ROOM="ABC(아카라카북클럽)"

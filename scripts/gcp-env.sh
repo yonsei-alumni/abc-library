@@ -21,6 +21,8 @@ SITE_URL=https://abc-lib.web.app
 GOOGLE_CLIENT_ID="185613497626-0st92809g1a0v1sqjgovtu81hr874a3v.apps.googleusercontent.com"
 BATCH_JOB=abc-batch
 SCHEDULER_JOB=abc-batch-daily
+# 같은 배치 Job을 월요일 아침에 batch weekly로 실행해서 카카오톡 대화방 주간 요약을 밴드에 올린다.
+WEEKLY_SCHEDULER_JOB=abc-batch-weekly
 
 WEB_SA="abc-web@${PROJECT}.iam.gserviceaccount.com"
 BATCH_SA="abc-batch@${PROJECT}.iam.gserviceaccount.com"
@@ -37,6 +39,10 @@ GOOGLE_SECRET=google-client-secret
 SESSION_SECRET_NAME=session-secret
 # 사용자를 구별하려고 Google 계정 고유 번호(sub)를 HMAC-SHA256할 때 쓰는 키. 바꾸면 모든 사용자가 북마크를 잃는다.
 USER_ID_SECRET_NAME=user-id-secret
+# 대화방 주간 요약(batch weekly)이 메시지를 읽는 Google 스프레드시트의 Apps Script 웹 앱 주소와 토큰. 배치만 읽는다.
+# 요약은 수집과 같은 밴드 세션(band-state)으로 밴드에 올리므로 다른 비밀은 없다.
+KAKAO_SHEET_URL_SECRET=kakao-sheet-url
+KAKAO_SHEET_TOKEN_SECRET=kakao-sheet-token
 # 배치 Job에서 band-state 비밀을 파일로 올리는 경로
 BAND_STATE_MOUNT=/secrets/band/band-state.json
 

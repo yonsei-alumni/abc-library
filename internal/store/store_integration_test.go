@@ -543,3 +543,47 @@ func TestKyoboBarcodeForProductWithoutISBN(t *testing.T) {
 		t.Errorf("관리자가 지운 바코드 = %+v", got)
 	}
 }
+
+func TestFindBook(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	story := book.Book{ISBN13: "9791196914806", Title: "당신 인생의 이야기", Authors: []string{"테드 창"}}
+	if err := s.SavePost(ctx, book.Post{No: 1, PostedAt: day(1), ContentHash: "h1"}, []book.Finding{
+		{Book: story, Mentions: []book.Mention{mention(book.InPost, 1, "본문 요약")}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	shelf, err := s.Books(ctx, Filter{}, 10, 0)
+	if err != nil || len(shelf) != 1 {
+		t.Fatalf("shelf = %+v, %v", shelf, err)
+	}
+	want := shelf[0].Book.ID
+
+	for _, tc := range []struct {
+		name string
+		b    book.Book
+		ok   bool
+	}{
+		{"ISBN", book.Book{ISBN13: story.ISBN13, Title: "다른 표기"}, true},
+		{"다른 판본의 작품 키", book.Book{ISBN13: "9788956057842", Title: "당신 인생의 이야기 (개정판)", Authors: []string{"테드 창"}}, true},
+		{"없는 책", book.Book{Title: "숨", Authors: []string{"테드 창"}}, false},
+	} {
+		id, ok, err := s.FindBook(ctx, tc.b)
+		if err != nil || ok != tc.ok || (ok && id != want) {
+			t.Errorf("%s: id=%d ok=%v err=%v", tc.name, id, ok, err)
+		}
+	}
+
+	// 관리자가 언급을 모두 지운 책은 사이트에 보이지 않으므로 찾지 않는다.
+	_, mentions, err := s.Book(ctx, want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteMention(ctx, mentions[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, err := s.FindBook(ctx, story); err != nil || ok {
+		t.Errorf("지운 책: ok=%v err=%v", ok, err)
+	}
+}

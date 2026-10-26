@@ -189,3 +189,46 @@ func TestOnPostPage(t *testing.T) {
 		}
 	}
 }
+
+func TestContainsMarker(t *testing.T) {
+	marker := "기간: 2026-10-19(월) ~ 2026-10-25(일)"
+	texts := []string{"다른 글", "ABC 대화방 주간 요약\n\n기간: 2026-10-19(월)  ~ 2026-10-25(일)\n\n…"}
+	if !ContainsMarker(texts, marker) {
+		t.Error("공백이 달라도 같은 기간 줄을 찾아야 한다")
+	}
+	if ContainsMarker(texts, "기간: 2026-10-26(월) ~ 2026-11-01(일)") {
+		t.Error("다른 기간을 찾았다")
+	}
+	if ContainsMarker(texts, "  ") || ContainsMarker(nil, marker) {
+		t.Error("빈 표시나 빈 목록에서 찾았다")
+	}
+}
+
+func TestSameLines(t *testing.T) {
+	content := "제목\n기간: 2026-10-19(월)\n\n- 항목 \n- 끝"
+	if !SameLines("제목\n기간: 2026-10-19(월)\n\n- 항목\n- 끝\n", content) {
+		t.Error("줄 끝 공백과 마지막 줄바꿈은 무시해야 한다")
+	}
+	if !SameLines("제목\n기간: 2026-10-19(월)\n\n- 항목\n- 끝", content) {
+		t.Error("편집기의 nbsp는 공백으로 본다")
+	}
+	if SameLines("제목\n기간: 2026-10-19(월)\n- 항목\n- 끝", content) {
+		t.Error("빈 줄이 빠졌는데 같다고 했다")
+	}
+	if SameLines("제목", content) {
+		t.Error("내용이 잘렸는데 같다고 했다")
+	}
+}
+
+func TestLineDiff(t *testing.T) {
+	for _, c := range []struct{ got, want, diff string }{
+		{"가\n나\n다", "가\n나\n다", "4번째 줄부터 다름, 편집기 3줄, 요약 3줄"},
+		{"가\n다", "가\n나\n다", "2번째 줄부터 다름, 편집기 2줄, 요약 3줄"},
+		{"가 \n나", "가\n나", "3번째 줄부터 다름, 편집기 2줄, 요약 2줄"},
+		{"", "가", "1번째 줄부터 다름, 편집기 1줄, 요약 1줄"},
+	} {
+		if got := lineDiff(c.got, c.want); got != c.diff {
+			t.Errorf("lineDiff(%q, %q) = %q, want %q", c.got, c.want, got, c.diff)
+		}
+	}
+}

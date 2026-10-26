@@ -118,6 +118,30 @@
 실행마다 `batch_runs`에 실행 전 마지막 글, 밴드 최신 글, 처리 건수, 오류를 남긴다. `make status`로 최근 실행과 다시 시도할 글을 본다.
 프롬프트나 태그 목록을 바꾼 뒤에는 `-redo-from 1`로 저장한 글을 다시 추출한다. 몇 개 글만 고칠 때는 `-redo-posts 175,184`처럼 글 번호를 준다. 이때 `-recheck-days 0`을 함께 주면 최근 글은 다시 읽지 않는다. 새 댓글이 달린 글은 이때도 찾아서 읽는다.
 
+## 대화방 주간 요약
+
+매주 월요일 07:00(KST)에 같은 배치 Job을 `batch weekly`로 실행해서, 카카오톡 ABC 대화방의 지난주(월~일) 대화를 정리한 글을 ABC 밴드에 올린다. 예전에 Hermes(Modal)가 Telegram으로 보내던 요약을 옮겨 왔다.
+
+1. 메시지는 운영자의 폰에서 kakao-to-google-sheet 앱(Android 접근성 서비스)이 대화방 화면을 읽어 Google 스프레드시트에 쌓는다. 배치는 시트에 붙은 Apps Script 웹 앱에 토큰과 함께 `action=messages&room=…&start=…&end=…`로 요청해서 JSON으로 받는다. 웹 앱은 보낸 날짜가 기간 안인 행과, 날짜를 모르지만 그 기간에 수집한 행을 돌려준다. 시트는 달마다 탭(`2026-10`)을 하나 두고, 이번 달과 지난 달 탭만 남긴다.
+2. 코드가 메시지의 보낸 시각을 정한다. 날짜와 시각을 알면 그대로, 날짜만 알면 수집 시각의 시:분을 붙이고, 시각만 알면 수집 시각 이전의 가장 가까운 그 시각, 둘 다 모르면 수집 시각이다. 그 날짜로 기간을 다시 거르고 시간순으로 놓고, 같은 날 같은 본문은 하나만 남긴다.
+3. 본문의 링크를 코드가 모두 뽑는다. 서점이 아닌 링크는 페이지 제목(`og:title`, `<title>`)을 읽고, 교보문고 상품 링크는 상품 번호로 판본을 찾아 링크 옆에 붙인다.
+4. Claude(`claude-opus-5-5`, effort medium)에 메시지 본문과 보낸 시각, 링크 목록을 보낸다. 보낸 사람은 보내지 않는다. `[사진 속 글자]`로 시작하는 메시지는 폰이 사진에서 OCR한 글자이므로 책을 알아보는 단서로만 쓰게 한다. Claude는 `search_kyobo`로 판본을 확인하고, 책(제목, 저자, 대화 맥락, 관련 링크 번호), 책에 붙이지 않은 링크의 설명, 핵심 키워드 10개를 JSON으로 답한다.
+5. 코드가 결과를 검증해서 글을 만든다.
+   - 검색 결과와 상품 링크에 없던 ISBN과 상품 번호는 버린다. 상품을 확정하지 못한 책은 교보문고 검색 주소를 단다.
+   - 링크는 처음 붙은 책 하나에만 붙이고, 책에 붙은 서점 링크는 교보문고 구매 링크로 대신한다. 어느 책에도 붙지 않은 링크는 모두 'URL 모음'에 넣는다.
+   - 사이트에 있는 책(ISBN이나 작품 키로 찾는다)이면 책 상세 화면 링크를 붙인다.
+6. 밴드 게시글 목록에서 같은 기간 줄(`기간: 2026-10-19(월) ~ 2026-10-25(일)`)이 든 글을 찾고, 없으면 수집과 같은 밴드 세션으로 웹 화면의 글쓰기 창에 붙여넣기 이벤트로 글을 넣는다(줄마다 입력하면 편집기가 링크 미리보기를 만드는 동안 줄을 잃는다). 편집기가 주소마다 붙이는 링크 미리보기 카드는 지운다(본문의 링크는 남는다). 넣은 내용이 요약과 같은지 확인한 뒤 게시하고, 게시한 뒤 목록에서 다시 찾는다. 글쓰기 설정은 바꾸지 않는다.
+
+- 기간의 메시지가 없으면 올리지 않는다. 시트를 읽지 못하거나 Claude가 거절하면 Job이 실패하고 알림 메일이 온다.
+- 메시지 원문과 보낸 사람은 DB에 저장하지 않고 로그에도 남기지 않는다.
+- 글 형식은 제목 줄(`[공유·추천된 책]`, `■ 《제목》 - 저자`)과 하이픈 목록만 쓰고 이모지는 쓰지 않는다. 밴드가 `#`으로 시작하는 말을 해시태그로 바꾸므로 `#`을 쓰지 않는다. '공유·추천된 책', '공유된 URL 모음', '핵심 키워드 10개' 순서다.
+
+```bash
+go run ./cmd/batch weekly -dry-run                    # 지난주 요약을 화면에만 출력한다
+go run ./cmd/batch weekly -end 2026-10-25 -dry-run    # 2026-10-19 ~ 2026-10-25
+go run ./cmd/batch weekly -band-no <시험용 밴드 번호>   # 시험용 밴드에 올린다
+```
+
 ## 태그
 
 - 책 한 권에 태그를 1~5개 단다. 태그 목록은 `tags` 테이블에 있고 관리 화면에서 고친다. 배치는 실행할 때 이 목록을 읽어서 Claude에게 그 안에서만 고르게 한다.
@@ -156,10 +180,11 @@
 | 웹 서버 | Cloud Run, `asia-southeast1`(싱가포르). 공개 주소는 Firebase Hosting의 https://abc-lib.web.app이고, 모든 요청을 Cloud Run으로 넘긴다 |
 | DB | Neon 프로젝트 `abc-library`, `aws-ap-southeast-1`(싱가포르), Postgres 18, DB 이름 `abc_library` |
 | 일일 배치 | Cloud Run Job, `asia-northeast3`(서울). 밴드 세션이 한국 IP에서 쓰이게 한다. Cloud Scheduler로 하루 한 번 실행한다 |
-| 비밀 값 | Secret Manager(`DB_PWD`, 밴드 `storageState`, Claude API 키, Google OAuth 클라이언트 보안 비밀, 세션 서명 값, 사용자 구별 키) |
+| 비밀 값 | Secret Manager(`DB_PWD`, 밴드 `storageState`, Claude API 키, Google OAuth 클라이언트 보안 비밀, 세션 서명 값, 사용자 구별 키, 대화방 시트 웹 앱 주소와 토큰) |
 | Claude 인증 | 운영 배치는 Workload Identity Federation으로 Claude Console 조직의 `abc-library` 워크스페이스(월 지출 한도 $200)에서 인증한다. Max 구독의 월 API 크레딧에서 비용이 빠진다. 로컬은 `CLAUDE_API_KEY` |
 | 이미지 | Artifact Registry `abc-library` 저장소(웹은 `asia-southeast1`, 배치는 `asia-northeast3`). 최근 5개만 남긴다 |
-| 실행 일정 | Cloud Scheduler `abc-batch-daily`가 매일 03:00(KST)에 Job을 실행한다. Job이 실패하면 Cloud Monitoring이 메일을 보낸다 |
+| 실행 일정 | Cloud Scheduler `abc-batch-daily`가 매일 03:00(KST)에 Job을 실행하고, `abc-batch-weekly`가 매주 월요일 07:00(KST)에 같은 Job을 인자 `weekly`로 실행한다(대화방 주간 요약). Job이 실패하면 Cloud Monitoring이 메일을 보낸다 |
+| 대화방 메시지 | 운영자의 Google 스프레드시트. kakao-to-google-sheet 앱이 쌓고, 시트에 붙은 Apps Script 웹 앱으로 읽는다 |
 
 ## 로컬 개발
 
@@ -183,11 +208,14 @@
 | `BAND_NO` | 밴드 번호(기본 `102765569`) |
 | `BAND_STATE_PATH` | 밴드 로그인 세션 파일(기본 `band-state.json`) |
 | `PORT` | 웹 서버 포트(기본 `8080`) |
+| `KAKAO_SHEET_URL` | 대화방 메시지 시트의 Apps Script 웹 앱 주소(`…/exec`). 주간 요약만 쓴다 |
+| `KAKAO_SHEET_TOKEN` | 그 웹 앱의 토큰 |
+| `KAKAO_ROOM` | 요약할 대화방 이름(기본 `ABC(아카라카북클럽)`) |
 | `GOOGLE_CLIENT_ID` | 로그인에 쓰는 Google OAuth 클라이언트 ID. 없으면 로그인을 쓰지 않는다 |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth 클라이언트 보안 비밀 |
 | `SESSION_SECRET` | 세션 쿠키 서명 값(32바이트 이상). 바꾸면 모든 사람이 로그아웃된다 |
 | `USER_ID_SECRET` | Google 계정 고유 번호를 HMAC-SHA256할 키(32바이트 이상). 없으면 관리자 로그인만 쓰고 북마크는 쓰지 않는다. 바꾸면 모든 사용자가 새 사용자가 되어 북마크를 잃으므로 바꾸지 않는다 |
-| `SITE_URL` | 사이트 공개 주소(기본 `http://localhost:{PORT}`). 로그인 리디렉션 URI와 POST 요청의 출처 확인에 쓴다 |
+| `SITE_URL` | 사이트 공개 주소(기본 `http://localhost:{PORT}`). 로그인 리디렉션 URI와 POST 요청의 출처 확인에 쓴다. 주간 요약은 책 상세 화면 링크에 쓴다(기본 `https://abc-lib.web.app`) |
 
 ## 배포
 
@@ -197,8 +225,9 @@ Google Cloud 프로젝트 `abc-library-512606`(이름 abc-library)에 배포한�
 |---|---|
 | 웹 서버 | Cloud Run 서비스 `abc-library`, 서비스 계정 `abc-web`, 최소 인스턴스 0, 공개 접근 |
 | 일일 배치 | Cloud Run Job `abc-batch`, 서비스 계정 `abc-batch`, 2 vCPU, 2GiB, 제한 시간 1시간, 재시도 없음 |
-| 비밀 값 | `db-pwd`(웹, 배치), `band-state`(배치, `/secrets/band/band-state.json`에 파일로 올림), `claude-api-key`(배치), `google-client-secret`, `session-secret`, `user-id-secret`(웹) |
-| 실행 계정 | `abc-scheduler`(Job 실행), `abc-deployer`(GitHub Actions 배포) |
+| 비밀 값 | `db-pwd`(웹, 배치), `band-state`(배치, `/secrets/band/band-state.json`에 파일로 올림), `claude-api-key`(배치), `kakao-sheet-url`, `kakao-sheet-token`(배치), `google-client-secret`, `session-secret`, `user-id-secret`(웹) |
+| 실행 일정 | `abc-batch-daily`(매일 03:00, `run`), `abc-batch-weekly`(월요일 07:00, 같은 Job을 overrides로 `weekly` 실행) |
+| 실행 계정 | `abc-scheduler`(Job 실행. 주간 요약의 인자 바꾸기에 `roles/run.jobsExecutorWithOverrides`가 필요하다), `abc-deployer`(GitHub Actions 배포) |
 
 처음 한 번은 `.envrc`를 읽은 셸에서 다음 순서로 실행한다. 모두 다시 실행해도 된다.
 
@@ -206,7 +235,7 @@ Google Cloud 프로젝트 `abc-library-512606`(이름 abc-library)에 배포한�
 make gcp-setup                  # API, 저장소, 서비스 계정, 비밀, GitHub Actions WIF
 make band-secret                # band-state.json을 Secret Manager에 올림
 make deploy-web deploy-batch    # 이미지 빌드, 푸시, 배포(DB_URL도 이때 설정)
-make gcp-schedule               # 매일 실행과 실패 알림
+make gcp-schedule               # 매일 실행, 월요일 주간 요약, 실패 알림
 make firebase-hosting           # https://abc-lib.web.app을 웹 서비스에 연결
 ```
 

@@ -5,6 +5,7 @@
 //	batch login     브라우저 창을 띄워 밴드에 로그인하고 세션을 저장한다.
 //	batch run       새 글, 지난번에 처리하지 못한 글, 새 댓글이 달린 글, 최근 글을 처리한다.
 //	batch status    최근 실행 기록과 다시 시도할 글을 보여 준다.
+//	batch weekly    카카오톡 대화방의 지난주 대화를 요약해서 Telegram으로 보낸다(월요일 아침 실행).
 //	batch seed      로컬 DB에 가상의 데모 데이터를 넣는다(make db-seed).
 package main
 
@@ -49,6 +50,8 @@ func main() {
 		err = run(ctx, log, os.Args[2:])
 	case "status":
 		err = status(ctx, log)
+	case "weekly":
+		err = summarizeWeek(ctx, log, os.Args[2:])
 	case "seed":
 		err = seed(ctx, log, os.Args[2:])
 	default:
@@ -61,7 +64,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "사용법: batch <migrate|unlock|login|run|status|seed> [-limit N] [-recheck-days N] [-redo-from N] [-redo-posts N,N]")
+	fmt.Fprintln(os.Stderr, "사용법: batch <migrate|unlock|login|run|status|weekly|seed> [-limit N] [-recheck-days N] [-redo-from N] [-redo-posts N,N]")
 	os.Exit(2)
 }
 

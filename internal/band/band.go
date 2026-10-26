@@ -1,6 +1,7 @@
 // Package band는 Playwright로 밴드 웹 화면을 열어 게시글을 읽는다.
-// 로그인은 사람이 직접 하고, 코드는 저장한 storageState만 쓴다. 글쓰기 같은 쓰기 동작은 하지 않는다.
+// 로그인은 사람이 직접 하고, 코드는 저장한 storageState만 쓴다.
 // 밴드 내부 API를 직접 호출하지 않고, 웹 클라이언트가 그린 화면에서 내용을 읽는다.
+// 쓰기 동작은 주간 배치가 대화방 주간 요약을 올리는 Write 하나뿐이다(write.go). 수집은 읽기만 한다.
 package band
 
 import (

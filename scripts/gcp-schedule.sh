@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# 배치 Job을 하루 한 번 실행하는 Cloud Scheduler 작업과, Job이 실패하면 메일을 보내는 알림을 만든다.
+# 배치 Job을 하루 한 번 실행하는 Cloud Scheduler 작업, 월요일 아침에 대화방 주간 요약(batch weekly)으로 실행하는 작업과,
+# Job이 실패하면 메일을 보내는 알림을 만든다.
 # 배치 Job을 처음 배포한 뒤에 한 번 실행한다. 이미 있으면 건너뛰거나 갱신하므로 다시 실행해도 된다.
 #
 #   make gcp-schedule                         알림은 gcloud에 로그인한 계정의 메일로 보낸다
@@ -12,12 +13,18 @@ source "$root/scripts/gcp-env.sh"
 
 # 매일 새벽 3시(KST)
 SCHEDULE="0 3 * * *"
+# 매주 월요일 아침 7시(KST). 지난주 월요일부터 어제(일요일)까지의 대화를 요약한다.
+WEEKLY_SCHEDULE="0 7 * * 1"
 ALERT_EMAIL="${ALERT_EMAIL:-$(gcloud config get-value account 2>/dev/null)}"
 
 echo "== 배치 Job 실행 권한 =="
 gcloud run jobs add-iam-policy-binding "$BATCH_JOB" --region "$BATCH_REGION" --project "$PROJECT" \
   --member "serviceAccount:$SCHEDULER_SA" --role roles/run.invoker >/dev/null
 echo "  roles/run.invoker ($BATCH_JOB → $SCHEDULER_SA)"
+# 주간 요약은 같은 Job을 인자만 바꿔(overrides) 실행한다. run.invoker에는 그 권한(run.jobs.runWithOverrides)이 없다.
+gcloud run jobs add-iam-policy-binding "$BATCH_JOB" --region "$BATCH_REGION" --project "$PROJECT" \
+  --member "serviceAccount:$SCHEDULER_SA" --role roles/run.jobsExecutorWithOverrides >/dev/null
+echo "  roles/run.jobsExecutorWithOverrides ($BATCH_JOB → $SCHEDULER_SA)"
 
 echo "== Cloud Scheduler =="
 uri="https://run.googleapis.com/v2/projects/${PROJECT}/locations/${BATCH_REGION}/jobs/${BATCH_JOB}:run"
@@ -33,6 +40,21 @@ else
   gcloud scheduler jobs create http "$SCHEDULER_JOB" "${flags[@]}" >/dev/null
 fi
 echo "  $SCHEDULER_JOB: $SCHEDULE (Asia/Seoul)"
+
+weekly_flags=(--location "$BATCH_REGION" --project "$PROJECT"
+  --schedule "$WEEKLY_SCHEDULE" --time-zone Asia/Seoul
+  --uri "$uri" --http-method POST
+  --message-body '{"overrides":{"containerOverrides":[{"args":["weekly"]}]}}'
+  --oauth-service-account-email "$SCHEDULER_SA"
+  --max-retry-attempts 0)
+if gcloud scheduler jobs describe "$WEEKLY_SCHEDULER_JOB" --location "$BATCH_REGION" --project "$PROJECT" >/dev/null 2>&1; then
+  gcloud scheduler jobs update http "$WEEKLY_SCHEDULER_JOB" "${weekly_flags[@]}" \
+    --update-headers "Content-Type=application/json" >/dev/null
+else
+  gcloud scheduler jobs create http "$WEEKLY_SCHEDULER_JOB" "${weekly_flags[@]}" \
+    --headers "Content-Type=application/json" >/dev/null
+fi
+echo "  $WEEKLY_SCHEDULER_JOB: $WEEKLY_SCHEDULE (Asia/Seoul, batch weekly)"
 
 echo "== 실패 알림 =="
 channel_name="abc-library 알림 메일"
