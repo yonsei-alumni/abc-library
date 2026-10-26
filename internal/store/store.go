@@ -432,24 +432,31 @@ func (r entryRow) toEntry() book.Entry {
 // Timeline은 최근 소식을 시각의 역순으로 돌려준다. 같은 글에서 같은 날(서울 시각) 같은 책을 여러 번 다뤘으면
 // 소식 하나로 묶는다. 다른 날 달린 댓글은 그날의 소식으로 따로 싣는다.
 // 소식의 댓글 수는 날짜와 상관없이 그 글의 댓글 중 이 책을 다룬 수다.
+//
+// 정렬 키가 집계 값이고 새 책인지 보려면 그 책의 소식을 모두 봐야 해서, 지우지 않은 언급을 모두 묶은 뒤에 쪽을 고른다.
+// 묶을 때는 요약 대신 언급 번호만 들고 다녀서 정렬을 가볍게 하고, 요약과 책 정보(태그)는 고른 소식에만 붙인다.
 func (s *Store) Timeline(ctx context.Context, limit, offset int) ([]book.Entry, error) {
 	var rows []entryRow
 	err := s.db.NewRaw(`
 		WITH news AS (
 			SELECT m.book_id, p.band_post_no, min(m.mentioned_at) AS posted_at,
-			       (array_agg(m.summary ORDER BY m.kind = 'post' DESC, m.mentioned_at, m.id))[1] AS summary,
+			       (array_agg(m.id ORDER BY m.kind = 'post' DESC, m.mentioned_at, m.id))[1] AS mention_id,
 			       count(*) FILTER (WHERE m.kind = 'comment') AS comments, count(*) AS mentions
 			FROM mentions m JOIN posts p ON p.id = m.post_id
 			WHERE NOT m.hidden
 			GROUP BY m.book_id, p.band_post_no, (m.mentioned_at AT TIME ZONE 'Asia/Seoul')::date
+		), page AS (
+			SELECT n.book_id, n.band_post_no, n.posted_at, n.mention_id,
+			       (sum(n.comments) OVER (PARTITION BY n.book_id, n.band_post_no))::int AS comments,
+			       (sum(n.mentions) OVER (PARTITION BY n.book_id))::int AS book_mentions,
+			       n.posted_at = min(n.posted_at) OVER (PARTITION BY n.book_id) AS is_new
+			FROM news n
+			ORDER BY n.posted_at DESC, n.book_id
+			LIMIT ? OFFSET ?
 		)
-		SELECT `+bookColumns+`, n.band_post_no, n.posted_at, n.summary,
-		       (sum(n.comments) OVER (PARTITION BY n.book_id, n.band_post_no))::int AS comments,
-		       (sum(n.mentions) OVER (PARTITION BY n.book_id))::int AS book_mentions,
-		       n.posted_at = min(n.posted_at) OVER (PARTITION BY n.book_id) AS is_new
-		FROM news n JOIN books b ON b.id = n.book_id
-		ORDER BY n.posted_at DESC, b.id
-		LIMIT ? OFFSET ?`, limit, offset).Scan(ctx, &rows)
+		SELECT `+bookColumns+`, pg.band_post_no, pg.posted_at, m.summary, pg.comments, pg.book_mentions, pg.is_new
+		FROM page pg JOIN books b ON b.id = pg.book_id JOIN mentions m ON m.id = pg.mention_id
+		ORDER BY pg.posted_at DESC, b.id`, limit, offset).Scan(ctx, &rows)
 	return convert(rows, entryRow.toEntry), err
 }
 

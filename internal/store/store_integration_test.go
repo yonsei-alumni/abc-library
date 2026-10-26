@@ -5,6 +5,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -210,6 +211,66 @@ func TestTimelineGroupsMentionsBySeoulDay(t *testing.T) {
 		if e.Comments != 3 || e.Mentions != 4 {
 			t.Errorf("소식의 댓글 수와 언급 수 = %+v", e)
 		}
+	}
+}
+
+func TestTimelinePagesAfterRankingAllNews(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+
+	a := book.Book{Title: "당신 인생의 이야기", Authors: []string{"테드 창"}, Tags: []string{"SF"}}
+	b := book.Book{Title: "무수면 사회", Authors: []string{"김찬호"}}
+	c := book.Book{Title: "투명한 나선", Authors: []string{"히가시노 게이고"}}
+	posts := []struct {
+		no       int
+		findings []book.Finding
+	}{
+		{1, []book.Finding{{Book: a, Mentions: []book.Mention{mention(book.InPost, 1, "A 본문")}}}},
+		{2, []book.Finding{{Book: b, Mentions: []book.Mention{mention(book.InPost, 2, "B 본문")}}}},
+		// 같은 날 댓글이 본문과 같은 시각이어도 소식의 요약은 본문의 것이다.
+		{3, []book.Finding{{Book: a, Mentions: []book.Mention{mention(book.InComment, 3, "A 댓글"), mention(book.InPost, 3, "A 다시")}}}},
+		{4, []book.Finding{{Book: c, Mentions: []book.Mention{mention(book.InComment, 4, "C 댓글")}}}},
+	}
+	for _, p := range posts {
+		if err := s.SavePost(ctx, book.Post{No: p.no, PostedAt: day(p.no), ContentHash: "h"}, p.findings); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	type news struct {
+		post     int
+		summary  string
+		isNew    bool
+		mentions int
+	}
+	got := func(limit, offset int) []news {
+		t.Helper()
+		entries, err := s.Timeline(ctx, limit, offset)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []news
+		for _, e := range entries {
+			out = append(out, news{e.PostNo, e.Summary, e.IsNew, e.Mentions})
+			if e.Book.Title == a.Title && !slices.Equal(e.Book.Tags, []string{"SF"}) {
+				t.Errorf("쪽으로 고른 소식에도 태그가 붙어야 한다: %+v", e.Book)
+			}
+		}
+		return out
+	}
+
+	// 새 책인지와 언급 수는 쪽 밖의 소식까지 보고 정한다.
+	if all, want := got(10, 0), []news{{4, "C 댓글", true, 1}, {3, "A 다시", false, 3}, {2, "B 본문", true, 1}, {1, "A 본문", true, 3}}; !slices.Equal(all, want) {
+		t.Errorf("소식 = %+v, 기대 %+v", all, want)
+	}
+	if middle, want := got(2, 1), []news{{3, "A 다시", false, 3}, {2, "B 본문", true, 1}}; !slices.Equal(middle, want) {
+		t.Errorf("가운데 쪽 = %+v, 기대 %+v", middle, want)
+	}
+	if last, want := got(2, 3), []news{{1, "A 본문", true, 3}}; !slices.Equal(last, want) {
+		t.Errorf("마지막 쪽 = %+v, 기대 %+v", last, want)
+	}
+	if past := got(2, 4); len(past) != 0 {
+		t.Errorf("소식이 끝난 뒤의 쪽은 비어야 한다: %+v", past)
 	}
 }
 
