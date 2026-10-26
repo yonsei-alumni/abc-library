@@ -2,6 +2,8 @@ package kakao
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -122,5 +124,57 @@ func TestMessagesErrors(t *testing.T) {
 	_, err := NewClient(addr+"/exec", "secret-token").Messages(context.Background(), "ABC", "2026-10-19", "2026-10-25")
 	if err == nil || strings.Contains(err.Error(), "secret-token") {
 		t.Errorf("err = %v", err)
+	}
+}
+
+func TestArrange(t *testing.T) {
+	var method, body, echoMethod string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/exec" {
+			method = r.Method
+			b, _ := io.ReadAll(r.Body)
+			body = string(b)
+			// Apps Script처럼 처리한 뒤 결과 주소로 넘긴다.
+			http.Redirect(w, r, "/echo", http.StatusFound)
+			return
+		}
+		echoMethod = r.Method
+		_, _ = w.Write([]byte(`{"ok":true,"rows":2452,"inferred":908,"still_blank":82}`))
+	}))
+	defer srv.Close()
+
+	res, err := NewClient(srv.URL+"/exec", "t0k").Arrange(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res != (ArrangeResult{Rows: 2452, Inferred: 908, StillBlank: 82}) {
+		t.Errorf("res = %+v", res)
+	}
+	if method != http.MethodPost || echoMethod != http.MethodGet || body != `{"action":"arrange","token":"t0k"}` {
+		t.Errorf("method=%s echo=%s body=%s", method, echoMethod, body)
+	}
+}
+
+func TestArrangeErrors(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"ok":false,"error":"알 수 없는 action: arrange"}`))
+	}))
+	defer srv.Close()
+	if _, err := NewClient(srv.URL, "t").Arrange(context.Background()); err == nil || !strings.Contains(err.Error(), "알 수 없는 action") {
+		t.Errorf("err = %v", err)
+	}
+	if _, err := NewClient("", "").Arrange(context.Background()); err == nil {
+		t.Error("설정이 없는데 오류가 없다")
+	}
+}
+
+// 시트가 추정한 날짜도 보낸 날짜로 쓴다.
+func TestInferredDateIsUsed(t *testing.T) {
+	var m []Message
+	if err := json.Unmarshal([]byte(`[{"id":"1","date":"2026-10-24","date_inferred":true,"time":"17:17","text":"긴 글","collected_at":"2026-10-26T21:51:00+09:00"}]`), &m); err != nil {
+		t.Fatal(err)
+	}
+	if !m[0].DateInferred || !m[0].At().Equal(kst("2026-10-24 17:17")) {
+		t.Errorf("m = %+v at %v", m[0], m[0].At())
 	}
 }

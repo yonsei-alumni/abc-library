@@ -5,6 +5,7 @@
 package kakao
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -24,7 +25,9 @@ type Message struct {
 	ID   string `json:"id"`
 	Room string `json:"room"`
 	// Date는 화면의 날짜 구분선으로 정한 보낸 날짜(YYYY-MM-DD)다. 알 수 없으면 비어 있다.
-	Date string `json:"date"`
+	// DateInferred가 참이면 폰이 읽은 값이 아니라 시트의 정리(Arrange)가 앞뒤 메시지로 추정한 날짜다.
+	Date         string `json:"date"`
+	DateInferred bool   `json:"date_inferred"`
 	// Time은 말풍선 옆 시각 라벨에서 읽은 보낸 시각(HH:MM)이다. 알 수 없으면 비어 있다.
 	Time   string `json:"time"`
 	Sender string `json:"sender"`
@@ -103,6 +106,34 @@ type response struct {
 	OK       bool      `json:"ok"`
 	Error    string    `json:"error"`
 	Messages []Message `json:"messages"`
+	ArrangeResult
+}
+
+// ArrangeResult는 시트 정리의 결과다.
+type ArrangeResult struct {
+	Rows       int `json:"rows"`
+	Inferred   int `json:"inferred"`
+	StillBlank int `json:"still_blank"`
+}
+
+// Arrange는 시트에서 보낸 날짜가 빈 메시지의 날짜를 앞뒤 메시지로 추정해 채우고, 탭마다 대화 순서로 정렬하게 한다.
+// 요약하기 전에 불러서 날짜를 모르는 메시지가 수집한 날로 몰리지 않게 한다.
+func (c *Client) Arrange(ctx context.Context) (ArrangeResult, error) {
+	if c.URL == "" || c.Token == "" {
+		return ArrangeResult{}, errors.New("KAKAO_SHEET_URL과 KAKAO_SHEET_TOKEN 환경 변수가 필요합니다")
+	}
+	body, _ := json.Marshal(map[string]string{"token": c.Token, "action": "arrange"})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.URL, bytes.NewReader(body))
+	if err != nil {
+		return ArrangeResult{}, errors.New("KAKAO_SHEET_URL 형식이 잘못되었습니다")
+	}
+	req.Header.Set("Content-Type", "application/json")
+	// Apps Script는 처리한 뒤 302로 결과 주소를 알려 준다. Go의 클라이언트는 POST의 302를 GET으로 따라간다.
+	r, err := c.do(req)
+	if err != nil {
+		return ArrangeResult{}, err
+	}
+	return r.ArrangeResult, nil
 }
 
 // Messages는 room 대화방에서 보낸 날짜가 start~end(YYYY-MM-DD)인 메시지와, 날짜를 모르지만 그 기간에 수집한 메시지를 읽는다.
@@ -126,6 +157,15 @@ func (c *Client) Messages(ctx context.Context, room, start, end string) ([]Messa
 	if err != nil {
 		return nil, err
 	}
+	r, err := c.do(req)
+	if err != nil {
+		return nil, err
+	}
+	return r.Messages, nil
+}
+
+// do는 웹 앱에 요청하고 응답을 읽는다. 웹 앱은 늘 200으로 답하고 성공 여부를 본문의 ok로 알린다.
+func (c *Client) do(req *http.Request) (response, error) {
 	resp, err := c.HTTP.Do(req)
 	if err != nil {
 		// 오류 메시지에 토큰이 든 주소가 들어가지 않게 한다.
@@ -133,23 +173,23 @@ func (c *Client) Messages(ctx context.Context, room, start, end string) ([]Messa
 		if errors.As(err, &ue) {
 			err = ue.Err
 		}
-		return nil, fmt.Errorf("시트 요청 실패: %w", err)
+		return response{}, fmt.Errorf("시트 요청 실패: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
 	if err != nil {
-		return nil, fmt.Errorf("시트 응답 읽기 실패: %w", err)
+		return response{}, fmt.Errorf("시트 응답 읽기 실패: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("시트 응답 코드 %d", resp.StatusCode)
+		return response{}, fmt.Errorf("시트 응답 코드 %d", resp.StatusCode)
 	}
 	var r response
 	if err := json.Unmarshal(body, &r); err != nil {
 		// 토큰이 틀리거나 웹 앱 권한이 없으면 Google 로그인 HTML이 온다.
-		return nil, errors.New("시트 응답이 JSON이 아닙니다. 웹 앱 주소와 배포 권한(모든 사용자)을 확인하세요")
+		return response{}, errors.New("시트 응답이 JSON이 아닙니다. 웹 앱 주소와 배포 권한(모든 사용자)을 확인하세요")
 	}
 	if !r.OK {
-		return nil, fmt.Errorf("시트 오류: %s", r.Error)
+		return response{}, fmt.Errorf("시트 오류: %s", r.Error)
 	}
-	return r.Messages, nil
+	return r, nil
 }

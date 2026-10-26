@@ -95,6 +95,12 @@ func postWeekly(log *slog.Logger, b poster, sum weekly.Summary) error {
 
 func weeklySummary(ctx context.Context, log *slog.Logger, room, start, end string) (weekly.Summary, error) {
 	sheet := kakao.NewClient(os.Getenv("KAKAO_SHEET_URL"), os.Getenv("KAKAO_SHEET_TOKEN"))
+	// 날짜를 모르는 메시지를 앞뒤 메시지로 채우고 대화 순서로 정렬해 둔다. 실패해도 시트를 그대로 읽어 요약한다.
+	if res, err := sheet.Arrange(ctx); err != nil {
+		log.Warn("시트를 정리하지 못해서 그대로 읽는다", "오류", err)
+	} else {
+		log.Info("시트 정리", "행", res.Rows, "날짜 추정", res.Inferred, "날짜 모름", res.StillBlank)
+	}
 	all, err := sheet.Messages(ctx, room, start, end)
 	if err != nil {
 		return weekly.Summary{}, err
