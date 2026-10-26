@@ -315,7 +315,7 @@ func (s *Store) SavePost(ctx context.Context, p book.Post, findings []book.Findi
 			if len(f.Mentions) == 0 {
 				continue
 			}
-			bookID, err := upsertBook(ctx, tx, f.Book)
+			bookID, err := upsertBook(ctx, tx, f.Book, f.Linked)
 			if err != nil {
 				return fmt.Errorf("게시글 %d의 책 %q 저장: %w", p.No, f.Book.Title, err)
 			}
@@ -348,19 +348,25 @@ func (s *Store) SavePost(ctx context.Context, p book.Post, findings []book.Findi
 
 // upsertBook은 같은 책 키(ISBN이나 작품 키)를 가진 책을 찾아서 빠진 정보와 태그를 더하고, 없으면 새로 만든다.
 // 관리자가 고친 책은 정보와 태그를 바꾸지 않는다. 어느 경우든 이 책의 키를 더해서 다음에도 같은 책을 찾게 한다.
-func upsertBook(ctx context.Context, tx bun.Tx, b book.Book) (int64, error) {
+// linked가 참이면 글쓴이가 링크로 가리킨 판본이므로, ISBN이 다른 책은 키가 맞아도 같은 책으로 보지 않는다.
+func upsertBook(ctx context.Context, tx bun.Tx, b book.Book, linked bool) (int64, error) {
 	keys := bookKeys(b)
 	var found []struct {
 		ID     int64 `bun:"id"`
 		Edited bool  `bun:"edited"`
 	}
-	// ISBN이 맞는 책을 작품 키만 맞는 책보다 먼저 고른다.
+	sameEdition := "TRUE"
+	if linked && b.ISBN13 != "" {
+		sameEdition = "(b.isbn13 IS NULL OR b.isbn13 = ?1)"
+	}
+	// ISBN이 같은 책, ISBN 키가 맞는 책, 작품 키만 맞는 책 순서로 고른다.
+	// 따로 둔 판본은 키를 다른 책이 이미 가졌을 수 있으므로 책의 ISBN으로도 찾는다.
 	err := tx.NewRaw(`
 		SELECT b.id, b.edited_at IS NOT NULL AS edited
-		FROM books b JOIN book_keys k ON k.book_id = b.id
-		WHERE k.key IN (?)
-		ORDER BY k.key LIKE 'isbn:%' DESC, b.id
-		LIMIT 1`, bun.List(keys)).Scan(ctx, &found)
+		FROM books b LEFT JOIN book_keys k ON k.book_id = b.id AND k.key IN (?0)
+		WHERE (k.key IS NOT NULL OR b.isbn13 = ?1) AND `+sameEdition+`
+		ORDER BY b.isbn13 = ?1 DESC NULLS LAST, k.key LIKE 'isbn:%' DESC NULLS LAST, b.id
+		LIMIT 1`, bun.List(keys), b.ISBN13).Scan(ctx, &found)
 	if err != nil {
 		return 0, err
 	}
@@ -582,10 +588,10 @@ func (s *Store) Book(ctx context.Context, id int64) (book.Book, []book.Mention, 
 func (s *Store) FindBook(ctx context.Context, b book.Book) (id int64, ok bool, err error) {
 	var ids []int64
 	err = s.db.NewRaw(`
-		SELECT b.id FROM books b JOIN book_keys k ON k.book_id = b.id
-		WHERE k.key IN (?) AND `+visibleBook+`
-		ORDER BY k.key LIKE 'isbn:%' DESC, b.id
-		LIMIT 1`, bun.List(bookKeys(b))).Scan(ctx, &ids)
+		SELECT b.id FROM books b LEFT JOIN book_keys k ON k.book_id = b.id AND k.key IN (?0)
+		WHERE (k.key IS NOT NULL OR b.isbn13 = ?1) AND `+visibleBook+`
+		ORDER BY b.isbn13 = ?1 DESC NULLS LAST, k.key LIKE 'isbn:%' DESC NULLS LAST, b.id
+		LIMIT 1`, bun.List(bookKeys(b)), b.ISBN13).Scan(ctx, &ids)
 	if err != nil || len(ids) == 0 {
 		return 0, false, err
 	}

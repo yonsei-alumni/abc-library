@@ -289,11 +289,11 @@ func (e *Extractor) parseResult(resp *anthropic.BetaMessage, in Input, seen, lin
 
 	// 같은 작품이 두 번 나오면 처음 것만 쓴다.
 	type candidate struct {
-		book book.Book
-		raw  int
+		book   book.Book
+		raw    int
+		linked bool
 	}
 	var candidates []candidate
-	keys := map[string]bool{}
 	postBooks := 0
 	for i, rb := range r.Books {
 		b := book.Book{Title: strings.TrimSpace(rb.Title), Authors: trimAll(rb.Authors), Tags: pickTags(rb.Tags, e.tags)}
@@ -302,6 +302,7 @@ func (e *Extractor) parseResult(resp *anthropic.BetaMessage, in Input, seen, lin
 		if !ok && rb.ISBN13 != "" {
 			ed, ok = seen[rb.ISBN13]
 		}
+		var fromLink bool
 		if ok {
 			b.ISBN13, b.Title, b.Publisher, b.KyoboPID = ed.ISBN13, ed.Title, ed.Publisher, ed.PID
 			if ed.Barcode != ed.ISBN13 {
@@ -310,13 +311,12 @@ func (e *Extractor) parseResult(resp *anthropic.BetaMessage, in Input, seen, lin
 			if len(ed.Authors) > 0 {
 				b.Authors = ed.Authors
 			}
+			_, fromLink = linked[ed.PID]
 		}
-		key := book.WorkKey(b.Title, b.Authors)
-		if b.Title == "" || keys[key] {
+		if b.Title == "" || slices.ContainsFunc(candidates, func(c candidate) bool { return sameWork(c.book, c.linked, b, fromLink) }) {
 			continue
 		}
-		keys[key] = true
-		candidates = append(candidates, candidate{book: b, raw: i})
+		candidates = append(candidates, candidate{book: b, raw: i, linked: fromLink})
 		if strings.TrimSpace(rb.Post.Summary) != "" {
 			postBooks++
 		}
@@ -361,9 +361,19 @@ func (e *Extractor) parseResult(resp *anthropic.BetaMessage, in Input, seen, lin
 		if len(mentions) == 0 {
 			continue
 		}
-		findings = append(findings, book.Finding{Book: b, Mentions: mentions})
+		findings = append(findings, book.Finding{Book: b, Mentions: mentions, Linked: c.linked})
 	}
 	return findings, nil
+}
+
+// sameWork는 두 책이 한 글 안에서 같은 책인지 알려 준다. 작품 키가 같으면 같은 책이지만,
+// 한쪽이 링크로 가리킨 판본이고 둘의 ISBN이 다르면 다른 책이다(예: 시간의 역사와 시간의 역사(결정판)).
+func sameWork(a book.Book, aLinked bool, b book.Book, bLinked bool) bool {
+	if book.WorkKey(a.Title, a.Authors) != book.WorkKey(b.Title, b.Authors) {
+		return false
+	}
+	separate := (aLinked || bLinked) && a.ISBN13 != "" && b.ISBN13 != "" && a.ISBN13 != b.ISBN13
+	return !separate
 }
 
 // pickLinks는 1부터 시작하는 번호로 링크를 고른다. 서점 구매 링크와 잘못된 번호는 뺀다.

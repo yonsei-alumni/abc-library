@@ -72,6 +72,9 @@ type Mention struct {
 type Finding struct {
 	Book     Book
 	Mentions []Mention
+	// Linked는 글쓴이가 교보문고 상품 링크로 가리킨 상품을 골랐다는 뜻이다.
+	// 작품 키가 같아도 ISBN이 다른 책과는 묶지 않는다(예: 시간의 역사와 시간의 역사(결정판)).
+	Linked bool
 }
 
 // Post는 저장할 게시글의 식별 정보다. 본문과 댓글은 저장하지 않는다.

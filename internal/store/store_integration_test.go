@@ -587,3 +587,60 @@ func TestFindBook(t *testing.T) {
 		t.Errorf("지운 책: ok=%v err=%v", ok, err)
 	}
 }
+
+func TestLinkedEditionStaysSeparate(t *testing.T) {
+	s := openTestStore(t)
+	ctx := context.Background()
+	save := func(no int, f book.Finding) {
+		t.Helper()
+		f.Mentions = []book.Mention{mention(book.InComment, no, "요약")}
+		if err := s.SavePost(ctx, book.Post{No: no, PostedAt: day(no), ContentHash: "h"}, []book.Finding{f}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	bookOf := func(isbn string) int64 {
+		t.Helper()
+		var id int64
+		if err := s.db.NewRaw("SELECT id FROM books WHERE isbn13 = ?", isbn).Scan(ctx, &id); err != nil {
+			t.Fatalf("ISBN %s인 책이 없다: %v", isbn, err)
+		}
+		return id
+	}
+
+	// 괄호 속 판본 표기를 빼면 작품 키가 같지만 다른 책이다.
+	definitive := book.Book{ISBN13: "9788972917359", Title: "시간의 역사(결정판)", Authors: []string{"스티븐 호킹"}}
+	brief := book.Book{ISBN13: "9788972914051", Title: "시간의 역사", Authors: []string{"스티븐 호킹", "레오나르드 믈로디노프"}}
+	save(1, book.Finding{Book: definitive})
+	definitiveID := bookOf(definitive.ISBN13)
+
+	// 예전 배치가 링크의 ISBN 키를 결정판에 붙여 두었어도 링크의 판본은 따로 둔다.
+	if _, err := s.db.NewRaw("INSERT INTO book_keys (key, book_id) VALUES (?, ?)", "isbn:"+brief.ISBN13, definitiveID).Exec(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// 같은 글을 다시 추출해도 따로 둔 책을 다시 찾는다.
+	for range 2 {
+		save(2, book.Finding{Book: brief, Linked: true})
+	}
+	briefID := bookOf(brief.ISBN13)
+	if briefID == definitiveID {
+		t.Fatal("링크로 가리킨 판본은 ISBN이 다른 책과 묶으면 안 된다")
+	}
+	if id, ok, err := s.FindBook(ctx, brief); err != nil || !ok || id != briefID {
+		t.Errorf("ISBN이 같은 책을 먼저 찾아야 한다: id=%d ok=%v err=%v", id, ok, err)
+	}
+
+	// 링크 없이 고른 판본은 지금처럼 같은 작품으로 묶는다.
+	save(3, book.Finding{Book: book.Book{ISBN13: "9788972910000", Title: "시간의 역사 (개정판)", Authors: []string{"스티븐 호킹"}}})
+	var n int
+	if err := s.db.NewRaw("SELECT count(*) FROM books").Scan(ctx, &n); err != nil || n != 2 {
+		t.Errorf("책은 두 권이어야 한다: %d, %v", n, err)
+	}
+
+	// ISBN을 모르는 책은 링크의 판본과 묶어서 ISBN을 채운다.
+	save(4, book.Finding{Book: book.Book{Title: "우주의 구조", Authors: []string{"브라이언 그린"}}})
+	save(5, book.Finding{Book: book.Book{ISBN13: "9788983711892", Title: "우주의 구조", Authors: []string{"브라이언 그린"}}, Linked: true})
+	if err := s.db.NewRaw("SELECT count(*) FROM books").Scan(ctx, &n); err != nil || n != 3 {
+		t.Errorf("ISBN 없는 책은 링크의 판본과 묶어야 한다: %d, %v", n, err)
+	}
+	bookOf("9788983711892")
+}

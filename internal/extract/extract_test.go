@@ -255,6 +255,41 @@ func TestExtractUsesLinkedKyoboProduct(t *testing.T) {
 	}
 }
 
+func TestExtractKeepsLinkedEditionApart(t *testing.T) {
+	brief := kyobo.Edition{PID: "S000001128340", Barcode: "9788972914051", ISBN13: "9788972914051", Title: "시간의 역사", Authors: []string{"스티븐 호킹", "레오나르드 믈로디노프"}, Publisher: "까치"}
+	definitive := kyobo.Edition{PID: "S000001128591", Barcode: "9788972917359", ISBN13: "9788972917359", Title: "시간의 역사(결정판)", Authors: []string{"스티븐 호킹"}, Publisher: "까치"}
+	search := &productSearch{results: map[string][]kyobo.Edition{
+		"S000001128340": {brief},
+		"시간의 역사":        {definitive, brief},
+	}}
+	in := Input{
+		PostedAt: postedAt,
+		Text:     "시간의 역사 결정판을 소개합니다.",
+		Comments: []Comment{{At: commentedAt, Text: "이 책도 같이 봤어요", Links: []book.Link{{URL: "https://product.kyobobook.co.kr/detail/S000001128340"}}}},
+	}
+	// 괄호 속 판본 표기를 빼면 작품 키가 같지만, 댓글의 링크가 가리킨 상품은 따로 넣는다.
+	body := found("시간의 역사(결정판)", "9788972917359", []string{"과학"}, "결정판 소개", nil)
+	comment := found("시간의 역사", "9788972914051", []string{"과학"}, "", nil, m{"comment": 1, "summary": "함께 소개"})
+	comment["kyobo_pid"] = "S000001128340"
+	// 같은 판본이 두 번 나오면 처음 것만 쓴다.
+	again := found("시간의 역사", "9788972914051", []string{}, "", nil, m{"comment": 1, "summary": "중복"})
+	api := &fakeAPI{responses: []string{
+		message("tool_use", `{"type":"tool_use","id":"tu_1","name":"search_kyobo","input":{"query":"시간의 역사"}}`),
+		message("end_turn", textBlock(m{"books": []m{body, comment, again}})),
+	}}
+
+	got, err := New(api, search, testTags).Extract(context.Background(), in)
+	if err != nil || len(got) != 2 {
+		t.Fatalf("결정판과 링크의 판본 두 권이어야 한다: %+v, %v", got, err)
+	}
+	if b := got[0]; b.Book.ISBN13 != "9788972917359" || b.Linked {
+		t.Errorf("검색으로 고른 결정판 = %+v", b)
+	}
+	if b := got[1]; b.Book.ISBN13 != "9788972914051" || b.Book.KyoboPID != "S000001128340" || !b.Linked || b.Mentions[0].Summary != "함께 소개" {
+		t.Errorf("링크의 판본 = %+v", b)
+	}
+}
+
 func TestExtractUsesLinkedProductWithoutISBN(t *testing.T) {
 	magazine := kyobo.Edition{PID: "S000221152938", Barcode: "3904000631271", Title: "스켑틱(Skeptic)(47호)", Authors: []string{"바다출판사 편집부"}, Publisher: "바다출판사"}
 	search := &productSearch{results: map[string][]kyobo.Edition{"S000221152938": {magazine}}}
