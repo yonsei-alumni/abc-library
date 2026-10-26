@@ -8,6 +8,7 @@
 
 - 서버는 Go 표준 라이브러리(`net/http`, `html/template`)로 만들고 화면의 상호작용은 HTMX로 처리한다. SPA 프레임워크나 JS 빌드 도구는 들이지 않는다.
 - DB는 Neon(PostgreSQL)이고 Bun으로 접근한다. 스키마 변경은 `internal/store/migrations`의 Bun 마이그레이션 파일로만 한다.
+- 마이그레이션 파일은 `.tx.up.sql`과 `.tx.down.sql`로 만들어서 한 파일을 한 트랜잭션에서 실행한다. 적용 기록은 성공한 뒤에만 남는다. 트랜잭션 안에서 못 하는 문장(`CREATE INDEX CONCURRENTLY` 등)이 든 파일만 `.up.sql`로 두고, 실패해도 다시 실행할 수 있게 `IF NOT EXISTS`처럼 쓴다.
 - 밴드 수집은 playwright-go(`github.com/mxschmitt/playwright-go`)로 한다.
 - 책 정보 추출은 공식 Go SDK(`github.com/anthropics/anthropic-sdk-go`)로 Claude를 호출한다. 모델은 `claude-opus-5-5`, effort는 `medium`으로 명시한다.
 - 의존성은 최소로 유지한다. 표준 라이브러리로 하기 어려울 때만 모듈을 추가한다.

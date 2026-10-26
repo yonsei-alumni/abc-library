@@ -1,6 +1,7 @@
 // batch는 일일 배치와 그 준비 작업을 실행한다.
 //
 //	batch migrate   DB 스키마를 최신으로 올린다.
+//	batch unlock    마이그레이션 중에 강제로 끝나서 남은 마이그레이션 잠금을 푼다.
 //	batch login     브라우저 창을 띄워 밴드에 로그인하고 세션을 저장한다.
 //	batch run       새 글, 지난번에 처리하지 못한 글, 새 댓글이 달린 글, 최근 글을 처리한다.
 //	batch status    최근 실행 기록과 다시 시도할 글을 보여 준다.
@@ -40,6 +41,8 @@ func main() {
 	switch os.Args[1] {
 	case "migrate":
 		err = migrate(ctx, log)
+	case "unlock":
+		err = unlock(ctx, log)
 	case "login":
 		err = login()
 	case "run":
@@ -58,7 +61,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "사용법: batch <migrate|login|run|status|seed> [-limit N] [-recheck-days N] [-redo-from N] [-redo-posts N,N]")
+	fmt.Fprintln(os.Stderr, "사용법: batch <migrate|unlock|login|run|status|seed> [-limit N] [-recheck-days N] [-redo-from N] [-redo-posts N,N]")
 	os.Exit(2)
 }
 
@@ -67,11 +70,7 @@ func statePath() string {
 }
 
 func openStore(ctx context.Context, log *slog.Logger) (*store.Store, error) {
-	dsn, err := config.DatabaseURL()
-	if err != nil {
-		return nil, err
-	}
-	st, err := store.Open(dsn)
+	st, err := connect()
 	if err != nil {
 		return nil, err
 	}
@@ -84,6 +83,29 @@ func openStore(ctx context.Context, log *slog.Logger) (*store.Store, error) {
 		log.Info("마이그레이션 적용", "묶음", applied)
 	}
 	return st, nil
+}
+
+// connect는 마이그레이션을 적용하지 않고 DB에 연결한다.
+func connect() (*store.Store, error) {
+	dsn, err := config.DatabaseURL()
+	if err != nil {
+		return nil, err
+	}
+	return store.Open(dsn)
+}
+
+// unlock은 남은 마이그레이션 잠금을 푼다. 잠금이 남으면 migrate뿐 아니라 마이그레이션을 먼저 적용하는 모든 하위 명령이 막힌다.
+func unlock(ctx context.Context, log *slog.Logger) error {
+	st, err := connect()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = st.Close() }()
+	if err := st.UnlockMigrations(ctx); err != nil {
+		return err
+	}
+	log.Info("마이그레이션 잠금을 풀었다")
+	return nil
 }
 
 func migrate(ctx context.Context, log *slog.Logger) error {

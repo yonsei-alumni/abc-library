@@ -229,6 +229,7 @@ GitHub Actions가 GCP 토큰을 받는 Workload Identity Federation 공급자에
 - 웹 서버는 `robots.txt`와 `X-Robots-Tag: noindex`로 검색엔진 수집을 막는다.
 - Firebase Hosting과 Cloud Run 앞단이 응답을 압축해 주지 않으므로 웹 서버가 HTML, CSS, JS 응답을 gzip으로 압축한다. 정적 파일은 시작할 때 한 번 압축해 둔다. 이미지, 512바이트보다 작은 응답, 이미 `Content-Encoding`이 붙은 응답은 압축하지 않는다.
 - 웹 서버는 마이그레이션을 적용하지 않는다. 스키마를 바꾼 코드를 `release`에 올리기 전에 운영 DB에 먼저 적용한다(`make release`가 한다). 그렇지 않으면 배포된 웹 서버가 다음 배치 실행까지 오류를 낸다.
+- 마이그레이션은 파일마다 트랜잭션에서 실행하고 성공한 뒤에만 적용했다고 기록한다. 실패하면 아무것도 바뀌지 않으므로 고쳐서 다시 실행한다. 마이그레이션 중에 프로세스가 강제로 끝나서(SIGKILL, OOM) 잠금이 남으면 모든 배치 명령이 `migrations table is already locked`로 막힌다. 다른 곳에서 마이그레이션 중이 아닌지 확인하고 `make migrate-unlock`으로 푼다. Ctrl+C나 SIGTERM으로 끝나면 잠금을 스스로 푼다.
 
 ### 로그인 설정
 

@@ -7,6 +7,7 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"io/fs"
 	"strings"
 	"time"
 	"unicode"
@@ -108,18 +109,29 @@ func (s *Store) Close() error {
 
 // Migrate는 아직 적용하지 않은 마이그레이션을 적용하고, 적용한 마이그레이션 묶음의 이름을 돌려준다.
 func (s *Store) Migrate(ctx context.Context) (string, error) {
+	return s.migrate(ctx, migrationFiles)
+}
+
+// migrate는 파일 시스템의 마이그레이션을 적용한다. 마이그레이션 파일(.tx.up.sql)은 한 파일을 한 트랜잭션에서 실행하고,
+// 성공한 뒤에만 적용했다고 기록한다. 그래서 실패한 마이그레이션은 아무것도 바꾸지 않고, 고친 뒤 다시 실행하면 적용된다.
+func (s *Store) migrate(ctx context.Context, fsys fs.FS) (_ string, err error) {
 	migrations := migrate.NewMigrations()
-	if err := migrations.Discover(migrationFiles); err != nil {
+	if err := migrations.Discover(fsys); err != nil {
 		return "", err
 	}
-	m := migrate.NewMigrator(s.db, migrations)
+	m := migrate.NewMigrator(s.db, migrations, migrate.WithMarkAppliedOnSuccess(true))
 	if err := m.Init(ctx); err != nil {
 		return "", err
 	}
 	if err := m.Lock(ctx); err != nil {
-		return "", err
+		return "", fmt.Errorf("%w. 이전 실행이 강제로 끝났다면 batch unlock(make migrate-unlock)으로 잠금을 푼다", err)
 	}
-	defer func() { _ = m.Unlock(ctx) }()
+	// 중단 신호로 ctx가 취소되어도 잠금은 풀어야 하므로 취소되지 않는 ctx를 쓴다.
+	defer func() {
+		if unlockErr := m.Unlock(context.WithoutCancel(ctx)); unlockErr != nil {
+			err = errors.Join(err, fmt.Errorf("마이그레이션 잠금을 풀지 못했다: %w", unlockErr))
+		}
+	}()
 	group, err := m.Migrate(ctx)
 	if err != nil {
 		return "", err
@@ -128,6 +140,16 @@ func (s *Store) Migrate(ctx context.Context) (string, error) {
 		return "", nil
 	}
 	return group.String(), nil
+}
+
+// UnlockMigrations는 마이그레이션 잠금을 푼다. 마이그레이션 중에 프로세스가 강제로 끝나서(SIGKILL, OOM)
+// 잠금이 남았을 때 쓴다. 다른 곳에서 마이그레이션을 실행하는 중이 아닌지 먼저 확인한다.
+func (s *Store) UnlockMigrations(ctx context.Context) error {
+	m := migrate.NewMigrator(s.db, migrate.NewMigrations())
+	if err := m.Init(ctx); err != nil {
+		return err
+	}
+	return m.Unlock(ctx)
 }
 
 type postRow struct {

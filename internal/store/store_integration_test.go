@@ -10,6 +10,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/uptrace/bun"
+	"github.com/uptrace/bun/dialect/pgdialect"
+
 	"github.com/yonsei-alumni/abc-library/internal/book"
 	"github.com/yonsei-alumni/abc-library/internal/config"
 )
@@ -36,17 +41,18 @@ func openTestStore(t *testing.T) *Store {
 		_ = admin.Close()
 	})
 
-	// Neon은 연결 문자열의 search_path 파라미터를 무시하므로, 연결을 하나로 묶고 SET으로 지정한다.
-	s, err := Open(dsn)
+	// Neon은 연결 문자열의 search_path 파라미터를 무시하므로, 연결을 열 때마다 SET으로 지정한다.
+	// ctx가 취소되어 pgx가 연결을 닫고 새로 열어도 임시 스키마를 벗어나지 않는다.
+	cfg, err := pgx.ParseConfig(dsn)
 	if err != nil {
 		t.Fatal(err)
 	}
+	sqldb := stdlib.OpenDB(*cfg, stdlib.OptionAfterConnect(func(ctx context.Context, conn *pgx.Conn) error {
+		_, err := conn.Exec(ctx, "SET search_path TO "+schema)
+		return err
+	}))
+	s := &Store{db: bun.NewDB(sqldb, pgdialect.New())}
 	t.Cleanup(func() { _ = s.Close() })
-	s.db.SetMaxOpenConns(1)
-	s.db.SetConnMaxIdleTime(0)
-	if _, err := s.db.ExecContext(ctx, "SET search_path TO "+schema); err != nil {
-		t.Fatal(err)
-	}
 	var current string
 	if err := s.db.QueryRowContext(ctx, "SELECT current_schema()").Scan(&current); err != nil || current != schema {
 		t.Fatalf("임시 스키마로 바뀌지 않았다: %q, %v", current, err)

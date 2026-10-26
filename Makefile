@@ -1,6 +1,6 @@
 .PHONY: fmt lint test check ci test-integration \
 	db-up db-seed db-psql db-down db-reset web batch-local \
-	web-prod migrate band-login batch status \
+	web-prod migrate migrate-unlock band-login batch status \
 	gcp-setup gcp-schedule band-secret deploy-web deploy-batch firebase-hosting release
 
 # 로컬 PostgreSQL(compose.yaml의 db) 연결. 이 컴퓨터에서만 쓰는 개발용 값이라 비밀이 아니다.
@@ -63,6 +63,10 @@ web-prod:
 # 스키마를 바꾼 코드를 release에 올리기 전에 운영 DB에 먼저 적용한다. make release가 필요할 때 대신 실행한다.
 migrate:
 	go run ./cmd/batch migrate
+
+# 마이그레이션 중에 프로세스가 강제로 끝나서 남은 잠금(migrations table is already locked)을 운영 DB에서 푼다.
+migrate-unlock:
+	go run ./cmd/batch unlock
 
 band-login:
 	go run ./cmd/batch login

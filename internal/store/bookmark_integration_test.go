@@ -318,7 +318,7 @@ func TestCategoryBookPositionMigration(t *testing.T) {
 	if _, err := s.db.NewRaw(`UPDATE bookmark_category_books SET position = 0`).Exec(ctx); err != nil {
 		t.Fatal(err)
 	}
-	sql, err := migrationFiles.ReadFile("migrations/20261025000006_category_book_position.up.sql")
+	sql, err := migrationFiles.ReadFile("migrations/20261025000006_category_book_position.tx.up.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -448,7 +448,7 @@ func TestLowercaseCodesMigration(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	sql, err := migrationFiles.ReadFile("migrations/20261025000001_lowercase_codes.up.sql")
+	sql, err := migrationFiles.ReadFile("migrations/20261025000001_lowercase_codes.tx.up.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
