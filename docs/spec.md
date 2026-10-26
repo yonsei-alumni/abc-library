@@ -157,7 +157,7 @@
 | DB | Neon 프로젝트 `abc-library`, `aws-ap-southeast-1`(싱가포르), Postgres 18, DB 이름 `abc_library` |
 | 일일 배치 | Cloud Run Job, `asia-northeast3`(서울). 밴드 세션이 한국 IP에서 쓰이게 한다. Cloud Scheduler로 하루 한 번 실행한다 |
 | 비밀 값 | Secret Manager(`DB_PWD`, 밴드 `storageState`, Claude API 키, Google OAuth 클라이언트 보안 비밀, 세션 서명 값, 사용자 구별 키) |
-| Claude 인증 | `CLAUDE_API_KEY`. 운영 배치는 Secret Manager의 `claude-api-key`. Workload Identity Federation은 코드만 준비되어 있다 |
+| Claude 인증 | 운영 배치는 Workload Identity Federation으로 Claude Console 조직의 `abc-library` 워크스페이스(월 지출 한도 $200)에서 인증한다. Max 구독의 월 API 크레딧에서 비용이 빠진다. 로컬은 `CLAUDE_API_KEY` |
 | 이미지 | Artifact Registry `abc-library` 저장소(웹은 `asia-southeast1`, 배치는 `asia-northeast3`). 최근 5개만 남긴다 |
 | 실행 일정 | Cloud Scheduler `abc-batch-daily`가 매일 03:00(KST)에 Job을 실행한다. Job이 실패하면 Cloud Monitoring이 메일을 보낸다 |
 

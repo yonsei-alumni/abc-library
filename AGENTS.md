@@ -87,7 +87,7 @@
 
 ## Claude 호출
 
-- 인증 정보는 코드에 두지 않는다. `CLAUDE_API_KEY`를 쓴다. 로컬은 `.envrc`에서, 운영 배치는 Secret Manager의 `claude-api-key`에서 받는다. `ANTHROPIC_FEDERATION_RULE_ID`가 설정되면 Cloud Run 메타데이터 서버의 ID 토큰으로 Workload Identity Federation을 쓴다(아직 운영에 설정하지 않았다).
+- 인증 정보는 코드에 두지 않는다. 로컬은 `.envrc`의 `CLAUDE_API_KEY`를 쓴다. 운영 배치는 `ANTHROPIC_FEDERATION_RULE_ID` 등(`scripts/gcp-env.sh`)이 설정되어 Cloud Run 메타데이터 서버의 ID 토큰으로 Workload Identity Federation을 쓴다. 토큰은 Console의 `abc-library` 워크스페이스로 범위가 제한된다.
 - `ANTHROPIC_API_KEY`라는 이름은 쓰지 않는다. 같은 디렉터리에서 실행한 Claude Code 같은 도구가 그 키를 가져다 쓰게 된다.
 - Claude 구독(OAuth) 토큰은 코드에서 쓰지 않는다.
 - 응답은 JSON 스키마를 지정한 structured outputs로 받는다. `stop_reason`이 `refusal`이면 그 글을 책 없이 저장하고 기록한다.

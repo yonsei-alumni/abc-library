@@ -30,7 +30,7 @@ DEPLOY_SA="abc-deployer@${PROJECT}.iam.gserviceaccount.com"
 # Secret Manager의 비밀 이름
 DB_PWD_SECRET=db-pwd
 BAND_STATE_SECRET=band-state
-# 배치가 Claude를 부를 때 쓰는 API 키. Workload Identity Federation으로 바꾸면 쓰지 않는다.
+# 배치가 Claude를 부를 때 쓰던 API 키. 아래 Workload Identity Federation 값이 있으면 Job에 연결하지 않는다.
 CLAUDE_KEY_SECRET=claude-api-key
 # 관리자 로그인(Google OAuth 클라이언트 보안 비밀)과 세션 쿠키 서명에 쓰는 비밀. 웹 서버만 읽는다.
 GOOGLE_SECRET=google-client-secret
@@ -47,10 +47,11 @@ DEPLOY_BRANCH=release
 WIF_POOL=github
 WIF_PROVIDER=abc-library
 
-# 배치가 Claude를 Workload Identity Federation으로 호출할 때 쓰는 값이다. 지금은 비워 두고 API 키를 쓴다.
-# Claude Console의 Workload identity 규칙에서 나온 ID라서 비밀이 아니다.
-# 값을 채워서 배포하면 extract.NewClient가 API 키 대신 WIF를 쓴다.
-ANTHROPIC_FEDERATION_RULE_ID=""
-ANTHROPIC_ORGANIZATION_ID=""
-ANTHROPIC_SERVICE_ACCOUNT_ID=""
-ANTHROPIC_WORKSPACE_ID=""
+# 배치가 Claude를 Workload Identity Federation으로 호출할 때 쓰는 값이다.
+# Claude Console의 Workload identity 규칙 abc-batch에서 나온 ID라서 비밀이 아니다. 규칙은 abc-batch 서비스 계정의
+# Google ID 토큰을 Console 서비스 계정 abc-batch로 바꿔 주고, 토큰은 abc-library 워크스페이스(월 지출 한도 $200)에서만 쓴다.
+# 값이 있으면 extract.NewClient가 API 키 대신 WIF를 쓴다. 비우고 배포하면 claude-api-key로 돌아간다.
+ANTHROPIC_FEDERATION_RULE_ID="fdrl_01VMxpGzcr5veU12AxcDqZBp"
+ANTHROPIC_ORGANIZATION_ID="effc7f0b-884f-4d61-87ef-d244fa71c789"
+ANTHROPIC_SERVICE_ACCOUNT_ID="svac_01SmHw7Zb9N4QvRpYRzvXjiM"
+ANTHROPIC_WORKSPACE_ID="wrkspc_014xvAz2r2XbW3Uu11hyxtuH"
