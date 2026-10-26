@@ -227,6 +227,7 @@ GitHub Actions가 GCP 토큰을 받는 Workload Identity Federation 공급자에
 - 밴드 세션이 만료되면 Job이 실패하고 알림 메일이 온다. `make band-login` 뒤에 `make band-secret`을 실행한다. Job은 비밀의 최신 버전을 읽으므로 다시 배포하지 않아도 된다.
 - Claude API 키를 바꾸려면 `gcloud secrets versions add claude-api-key --data-file=-`로 새 버전을 올린다.
 - 웹 서버는 `robots.txt`와 `X-Robots-Tag: noindex`로 검색엔진 수집을 막는다.
+- Firebase Hosting과 Cloud Run 앞단이 응답을 압축해 주지 않으므로 웹 서버가 HTML, CSS, JS 응답을 gzip으로 압축한다. 정적 파일은 시작할 때 한 번 압축해 둔다. 이미지, 512바이트보다 작은 응답, 이미 `Content-Encoding`이 붙은 응답은 압축하지 않는다.
 - 웹 서버는 마이그레이션을 적용하지 않는다. 스키마를 바꾼 코드를 `release`에 올리기 전에 운영 DB에 먼저 적용한다(`make release`가 한다). 그렇지 않으면 배포된 웹 서버가 다음 배치 실행까지 오류를 낸다.
 
 ### 로그인 설정

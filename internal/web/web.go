@@ -2,6 +2,7 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"embed"
@@ -221,8 +222,19 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /healthz", health)
 	mux.HandleFunc("GET /health", health)
 	static := http.FileServerFS(staticFiles)
+	staticGzip, err := gzipFiles(staticFiles)
+	if err != nil {
+		s.log.Warn("정적 파일을 미리 압축하지 못해서 요청마다 압축한다", "오류", err)
+	}
 	mux.Handle("GET /static/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "public, max-age=86400")
+		name := strings.TrimPrefix(r.URL.Path, "/")
+		if data, ok := staticGzip[name]; ok && acceptsGzip(r) {
+			// Content-Encoding이 붙어 있으므로 compress가 다시 압축하지 않는다. Content-Type은 이름의 확장자로 정한다.
+			w.Header().Set("Content-Encoding", "gzip")
+			http.ServeContent(w, r, name, time.Time{}, bytes.NewReader(data))
+			return
+		}
 		static.ServeHTTP(w, r)
 	}))
 	// 비공개 밴드에서 나온 요약을 싣는 사이트라서 검색엔진이 수집하지 않게 한다.
@@ -240,10 +252,10 @@ func (s *Server) Handler() http.Handler {
 		s.status(w, r, http.StatusForbidden, "요청을 처리할 수 없습니다", "다른 사이트에서 보낸 요청은 받지 않습니다.")
 	}))
 	handler := cop.Handler(s.withAccount(mux))
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return compress(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Robots-Tag", "noindex, nofollow")
 		handler.ServeHTTP(w, r)
-	})
+	}))
 }
 
 func page(r *http.Request) int {
