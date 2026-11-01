@@ -338,3 +338,70 @@ func TestShorten(t *testing.T) {
 		t.Errorf("줄임 = %q", got)
 	}
 }
+
+func chosenBoard(t *testing.T, c *Crawler) string {
+	t.Helper()
+	v, err := c.page.Evaluate(`() => window.chosen || ''`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw(v)
+}
+
+// TestWaitWriteClosedChoosesBoard는 게시판 선택 창이 늦게 떠도 게시판을 고르고 확인을 누르는지 본다.
+// 고정 HTML에는 숨은 확인 버튼이 뒤에 있어서 보이는 버튼을 눌러야 창이 닫힌다.
+func TestWaitWriteClosedChoosesBoard(t *testing.T) {
+	c := &Crawler{Board: "자유게시판", page: openPage(t, "testdata/board.html")}
+	c.watchDialogs()
+	if err := c.waitWriteClosed(6 * time.Second); err != nil {
+		t.Fatal(err)
+	}
+	if got := chosenBoard(t, c); got != "#자유게시판" {
+		t.Errorf("고른 게시판 = %q", got)
+	}
+}
+
+func TestWaitWriteClosedUnknownBoard(t *testing.T) {
+	c := &Crawler{Board: "없는게시판", page: openPage(t, "testdata/board.html")}
+	c.watchDialogs()
+	err := c.waitWriteClosed(8 * time.Second)
+	if err == nil || !strings.Contains(err.Error(), "게시판 없는게시판를 고르지 못했습니다") || !strings.Contains(err.Error(), "#자유게시판") {
+		t.Errorf("없는 게시판은 실패하고 화면의 게시판 목록을 남겨야 한다: %v", err)
+	}
+	if strings.Contains(err.Error(), "가상 요약") {
+		t.Errorf("오류에 글 내용이 들어가면 안 된다: %v", err)
+	}
+	if got := chosenBoard(t, c); got != "" {
+		t.Errorf("다른 게시판을 고르면 안 된다: %q", got)
+	}
+}
+
+func TestWaitWriteClosedNoBoardSet(t *testing.T) {
+	c := &Crawler{page: openPage(t, "testdata/board.html")}
+	c.watchDialogs()
+	err := c.waitWriteClosed(3 * time.Second)
+	if err == nil || !strings.Contains(err.Error(), "게시판이 정해지지 않았습니다") {
+		t.Errorf("게시판을 정하지 않았으면 실패해야 한다: %v", err)
+	}
+}
+
+// TestWaitWriteClosedChoosesOnce는 확인을 눌러도 창이 닫히지 않을 때 게시판을 다시 고르지 않는지 본다.
+// 게시판을 한 번만 고르는 것은 글을 두 번 올리지 않기 위해서다.
+func TestWaitWriteClosedChoosesOnce(t *testing.T) {
+	c := &Crawler{Board: "자유게시판", page: openPage(t, "testdata/board.html")}
+	c.watchDialogs()
+	if _, err := c.page.Evaluate(`() => { window.keepOpen = true; }`); err != nil {
+		t.Fatal(err)
+	}
+	err := c.waitWriteClosed(4 * time.Second)
+	if err == nil || !strings.Contains(err.Error(), "게시판 자유게시판을 고름") {
+		t.Fatalf("고른 사실을 오류에 남겨야 한다: %v", err)
+	}
+	v, evalErr := c.page.Evaluate(`() => window.confirms`)
+	if evalErr != nil {
+		t.Fatal(evalErr)
+	}
+	if v != 1 {
+		t.Errorf("확인을 누른 수 = %v", v)
+	}
+}

@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ko">
+<body style="margin:0">
+<!-- 게시판을 쓰는 밴드의 게시판 선택 창을 흉내 낸 가상의 화면이다. 창은 게시 버튼을 누른 뒤 조금 늦게 뜬다. -->
+<section class="_lyWrap">
+  <div class="contentEditor _richEditor" contenteditable="true"><p>가상 요약 첫 줄</p></div>
+  <button class="uButton _btnSubmitPost -confirm">게시</button>
+  <button style="display:none">확인</button>
+</section>
+<template id="board">
+  <div class="lyBoardSelect" style="position:fixed;inset:0;background:#fff">
+    <h2>게시판 선택</h2>
+    <p>게시판을 선택해야 글이 등록됩니다.</p>
+    <ul>
+      <li><label><input type="radio" name="board"><span class="text">#공지사항</span></label></li>
+      <li><label><input type="radio" name="board"><span class="text">#자유게시판</span></label></li>
+      <li><label><input type="radio" name="board"><span class="text">#자유게시판_옛글</span></label></li>
+    </ul>
+    <button class="uButton">취소</button>
+    <button class="uButton -confirm"><span>확인</span></button>
+  </div>
+  <button style="display:none">확인</button>
+</template>
+<script>
+  window.confirms = 0;
+  setTimeout(() => {
+    document.body.append(document.getElementById('board').content.cloneNode(true));
+    document.querySelector('.lyBoardSelect button.-confirm').addEventListener('click', () => {
+      window.confirms++;
+      const checked = document.querySelector('.lyBoardSelect input:checked');
+      if (!checked) return;
+      window.chosen = checked.parentElement.innerText.trim();
+      if (window.keepOpen) return;
+      document.querySelector('.lyBoardSelect').remove();
+      document.querySelector('._richEditor').remove();
+    });
+  }, 300);
+</script>
+</body>
+</html>

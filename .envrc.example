@@ -32,3 +32,5 @@ export CLAUDE_API_KEY=""
 # export BAND_STATE_PATH="band-state.json"
 # export PORT="8080"
 # export KAKAO_ROOM="ABC(아카라카북클럽)"
+# 대화방 주간 요약을 올릴 밴드 게시판 이름. #은 빼고 쓴다.
+# export BAND_BOARD="자유게시판"

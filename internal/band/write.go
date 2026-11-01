@@ -12,7 +12,7 @@ import (
 )
 
 // 밴드에 쓰는 동작은 이 파일에만 둔다. 대화방 주간 요약 글을 일주일에 한 번 올리는 것 말고는 쓰지 않는다.
-// 글쓰기 설정(알림, 공지 등록 등)은 건드리지 않고 기본값으로 올린다.
+// 글쓰기 설정(알림, 공지 등록 등)은 건드리지 않고 기본값으로 올린다. 게시판을 쓰는 밴드에서는 정해진 게시판만 고른다.
 
 const (
 	writeLayer  = "section._lyWrap"
@@ -21,6 +21,12 @@ const (
 	writeSnippetDelete = writeEditor + ` .cke_widget_wrapper[data-type="snippet"] button._btnDelete`
 	writeSubmit        = writeLayer + " button._btnSubmitPost"
 	openWriteBtn       = "button._btnOpenWriteLayer"
+
+	// boardPrompt는 게시판 선택 창의 안내 문구다. 게시판을 쓰는 밴드는 게시 버튼을 누르면 이 창을 띄우고,
+	// 게시판을 고르지 않으면 글을 올리지 않는다.
+	boardPrompt = "게시판을 선택해야 글이 등록됩니다"
+	// boardClickTimeout은 게시판 선택 창의 항목과 확인을 누를 때 기다리는 시간(밀리초)이다.
+	boardClickTimeout = 5000
 
 	// writeCloseTimeout은 게시 버튼을 누른 뒤 글쓰기 창이 닫히기를 기다리는 시간이다.
 	writeCloseTimeout = 90 * time.Second
@@ -145,6 +151,7 @@ func (c *Crawler) Write(content, marker string) error {
 func (c *Crawler) waitWriteClosed(timeout time.Duration) error {
 	editor := c.page.Locator(writeEditor).First()
 	var states []string
+	chosen := false
 	for deadline := time.Now().Add(timeout); time.Now().Before(deadline); time.Sleep(time.Second) {
 		// 게시한 뒤 화면이 바뀌는 중이면 읽기가 실패할 수 있으므로 오류를 실패로 치지 않는다.
 		if visible, err := editor.IsVisible(); err == nil && !visible {
@@ -154,8 +161,39 @@ func (c *Crawler) waitWriteClosed(timeout time.Duration) error {
 		if s != "" && len(states) < maxWriteStates && !slices.Contains(states, s) {
 			states = append(states, s)
 		}
+		// 두 번 올리지 않도록 게시판은 한 번만 고르고, 고른 뒤에 게시 버튼을 다시 누르지 않는다.
+		if !chosen {
+			var err error
+			if chosen, err = c.chooseBoard(); err != nil {
+				return err
+			}
+			if chosen {
+				states = append(states, "게시판 "+c.Board+"을 고름")
+			}
+		}
 	}
 	return fmt.Errorf("게시한 뒤 글쓰기 창이 닫히지 않았습니다(%s)", describeWrite(c.takeDialogs(), states))
+}
+
+// chooseBoard는 게시판 선택 창이 떠 있으면 c.Board를 고르고 확인을 누른다. 창이 없으면 false를 돌려준다.
+// 게시판을 쓰지 않는 밴드에는 창이 뜨지 않는다. 오류에는 Playwright의 호출 기록 대신 화면 상태를 넣는다.
+func (c *Crawler) chooseBoard() (bool, error) {
+	if visible, err := c.page.GetByText(boardPrompt).First().IsVisible(); err != nil || !visible {
+		return false, nil
+	}
+	if c.Board == "" {
+		return false, errors.New("게시판 선택 창이 떴지만 고를 게시판이 정해지지 않았습니다")
+	}
+	exact := playwright.PageGetByTextOptions{Exact: playwright.Bool(true)}
+	click := playwright.LocatorClickOptions{Timeout: playwright.Float(boardClickTimeout)}
+	// 화면의 게시판 이름은 #으로 시작한다.
+	if err := c.page.GetByText("#"+c.Board, exact).Locator("visible=true").First().Click(click); err != nil {
+		return false, fmt.Errorf("게시판 %s를 고르지 못했습니다(%s)", c.Board, describeWrite(c.takeDialogs(), []string{c.writeState()}))
+	}
+	if err := c.page.GetByText("확인", exact).Locator("visible=true").Last().Click(click); err != nil {
+		return false, fmt.Errorf("게시판 선택 창의 확인을 누르지 못했습니다(%s)", describeWrite(c.takeDialogs(), []string{c.writeState()}))
+	}
+	return true, nil
 }
 
 // writeState는 지금 화면의 상태를 JSON으로 읽는다. 읽지 못하면 빈 문자열이다.

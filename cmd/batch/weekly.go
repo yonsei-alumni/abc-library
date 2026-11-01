@@ -48,6 +48,7 @@ func summarizeWeek(ctx context.Context, log *slog.Logger, args []string) error {
 		return err
 	}
 	defer func() { _ = crawler.Close() }()
+	crawler.Board = config.Get("BAND_BOARD", "자유게시판")
 	// 이미 올린 주면 Claude를 부르기 전에 끝낸다.
 	posted, err := crawler.Posted(weekly.Summary{Start: start, End: last}.PeriodLine())
 	if err != nil {

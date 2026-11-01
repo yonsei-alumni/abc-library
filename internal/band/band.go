@@ -154,6 +154,8 @@ func loggedIn(bctx playwright.BrowserContext, page playwright.Page) bool {
 // Crawler는 저장한 세션으로 밴드 화면을 여는 헤드리스 브라우저다.
 type Crawler struct {
 	BandNo string
+	// Board는 글을 올릴 게시판 이름이다. 게시판을 쓰는 밴드에서 글을 올릴 때만 쓴다.
+	Board string
 	// Delay는 페이지를 열기 전에 쉬는 시간이다. 밴드에 부담을 주지 않기 위해 둔다.
 	Delay time.Duration
 
