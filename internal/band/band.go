@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -163,6 +164,9 @@ type Crawler struct {
 
 	// dialogs는 페이지가 띄운 알림창 수다. 삭제된 글은 알림창을 띄우고 목록으로 돌아간다.
 	dialogs atomic.Int32
+	// dialogTexts는 알림창 문구다. 글쓰기가 막힌 이유를 오류에 남기려고 모은다.
+	dialogMu    sync.Mutex
+	dialogTexts []string
 }
 
 // Open은 statePath의 세션으로 브라우저를 연다.
@@ -187,11 +191,37 @@ func Open(statePath, bandNo string) (*Crawler, error) {
 		_ = c.Close()
 		return nil, err
 	}
+	c.watchDialogs()
+	return c, nil
+}
+
+// watchDialogs는 페이지가 띄우는 알림창을 세고 문구를 모은 뒤 닫는다.
+func (c *Crawler) watchDialogs() {
 	c.page.OnDialog(func(d playwright.Dialog) {
 		c.dialogs.Add(1)
+		c.dialogMu.Lock()
+		c.dialogTexts = append(c.dialogTexts, d.Type()+": "+shorten(d.Message(), 200))
+		c.dialogMu.Unlock()
 		_ = d.Dismiss()
 	})
-	return c, nil
+}
+
+// takeDialogs는 모은 알림창 문구를 돌려주고 비운다.
+func (c *Crawler) takeDialogs() []string {
+	c.dialogMu.Lock()
+	defer c.dialogMu.Unlock()
+	texts := c.dialogTexts
+	c.dialogTexts = nil
+	return texts
+}
+
+// shorten은 s를 글자 n개까지로 줄인다.
+func shorten(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n]) + "…"
 }
 
 // Close는 브라우저를 닫는다.

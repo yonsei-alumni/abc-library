@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -20,7 +21,45 @@ const (
 	writeSnippetDelete = writeEditor + ` .cke_widget_wrapper[data-type="snippet"] button._btnDelete`
 	writeSubmit        = writeLayer + " button._btnSubmitPost"
 	openWriteBtn       = "button._btnOpenWriteLayer"
+
+	// writeCloseTimeout은 게시 버튼을 누른 뒤 글쓰기 창이 닫히기를 기다리는 시간이다.
+	writeCloseTimeout = 90 * time.Second
+	// maxWriteStates는 게시가 막혔을 때 오류에 남기는 화면 상태의 수다.
+	maxWriteStates = 10
 )
+
+// writeStateScript는 게시 버튼을 누른 뒤의 화면을 읽는다. 게시가 막힌 이유를 알려고 쓴다.
+// 글자는 편집기와 게시글 카드 밖의 안내와 쓰기 창을 덮은 층에서만 읽는다. 편집기는 글자 수만 센다.
+const writeStateScript = `({layer, editor, submit}) => {
+  const clean = t => (t || '').trim().replace(/\s+/g, ' ').slice(0, 200);
+  const shown = e => { const r = e.getBoundingClientRect(), s = getComputedStyle(e);
+    return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none'; };
+  const content = 'article, [contenteditable=true]';
+  const ed = document.querySelector(editor);
+  const btn = document.querySelector(submit);
+  const box = ed && ed.closest(layer);
+  const notes = [...document.querySelectorAll(
+    '[role=alert], [role=alertdialog], [role=dialog], [class*=toast i], [class*=alert i], [class*=error i], [class*=popup i], [class*=modal i]')]
+    .filter(e => shown(e) && !e.contains(ed) && !e.closest(content))
+    .map(e => clean(e.innerText)).filter(Boolean);
+  // 쓰기 창 위를 덮은 층은 클래스 이름과 상관없이 찾는다. 화면 가운데에 있는 요소가 쓰기 창 밖이면 덮인 것이다.
+  const top = document.elementFromPoint(innerWidth / 2, innerHeight / 2);
+  let cover = '';
+  if (top && box && !box.contains(top) && !top.closest(content)) {
+    cover = (top.className || top.tagName).toString().slice(0, 60);
+    for (let e = top, i = 0; e && i < 4 && !e.contains(ed) && !e.querySelector('article'); e = e.parentElement, i++) {
+      const t = clean(e.innerText);
+      if (t) { notes.push(t); break; }
+    }
+  }
+  return JSON.stringify({
+    submit: btn ? {disabled: btn.disabled, aria: btn.getAttribute('aria-disabled') || '', class: btn.className.toString().slice(0, 80)} : null,
+    chars: ed ? ed.textContent.length : 0,
+    paragraphs: ed ? ed.querySelectorAll(':scope > p').length : 0,
+    cover,
+    notes: [...new Set(notes)].slice(0, 5),
+  });
+}`
 
 // recentTextsScript는 게시글 목록 첫 화면에 그려진 글의 본문만 읽는다. 작성자 영역은 읽지 않는다.
 const recentTextsScript = `() => JSON.stringify([...document.querySelectorAll('article._postMainWrap')]
@@ -81,13 +120,13 @@ func (c *Crawler) Write(content, marker string) error {
 	if !SameLines(got, content) {
 		return fmt.Errorf("글쓰기 편집기에 넣은 내용이 요약과 달라서 올리지 않았습니다(%s)", lineDiff(got, content))
 	}
+	c.takeDialogs()
 	click := playwright.LocatorClickOptions{Timeout: playwright.Float(10000)}
 	if err := c.page.Locator(writeSubmit).First().Click(click); err != nil {
 		return fmt.Errorf("게시 버튼을 누르지 못했습니다: %w", err)
 	}
-	editor := c.page.Locator(writeEditor).First()
-	if err := editor.WaitFor(playwright.LocatorWaitForOptions{State: playwright.WaitForSelectorStateHidden, Timeout: playwright.Float(30000)}); err != nil {
-		return fmt.Errorf("게시한 뒤 글쓰기 창이 닫히지 않았습니다: %w", err)
+	if err := c.waitWriteClosed(writeCloseTimeout); err != nil {
+		return err
 	}
 	time.Sleep(3 * time.Second)
 	posted, err := c.Posted(marker)
@@ -98,6 +137,50 @@ func (c *Crawler) Write(content, marker string) error {
 		return errors.New("게시했지만 목록에서 새 글을 찾지 못했습니다")
 	}
 	return nil
+}
+
+// waitWriteClosed는 게시 버튼을 누른 뒤 글쓰기 창이 닫히기를 기다린다. 잠깐 떴다 사라지는 안내를 놓치지 않으려고
+// 1초마다 화면을 읽고, 끝내 닫히지 않으면 본 상태와 알림창 문구를 오류에 담는다.
+// Playwright 오류의 호출 기록에는 요소의 내용이 섞일 수 있으므로 오류에 넣지 않는다.
+func (c *Crawler) waitWriteClosed(timeout time.Duration) error {
+	editor := c.page.Locator(writeEditor).First()
+	var states []string
+	for deadline := time.Now().Add(timeout); time.Now().Before(deadline); time.Sleep(time.Second) {
+		// 게시한 뒤 화면이 바뀌는 중이면 읽기가 실패할 수 있으므로 오류를 실패로 치지 않는다.
+		if visible, err := editor.IsVisible(); err == nil && !visible {
+			return nil
+		}
+		s := c.writeState()
+		if s != "" && len(states) < maxWriteStates && !slices.Contains(states, s) {
+			states = append(states, s)
+		}
+	}
+	return fmt.Errorf("게시한 뒤 글쓰기 창이 닫히지 않았습니다(%s)", describeWrite(c.takeDialogs(), states))
+}
+
+// writeState는 지금 화면의 상태를 JSON으로 읽는다. 읽지 못하면 빈 문자열이다.
+func (c *Crawler) writeState() string {
+	v, err := c.page.Evaluate(writeStateScript, map[string]any{"layer": writeLayer, "editor": writeEditor, "submit": writeSubmit})
+	if err != nil {
+		return ""
+	}
+	s, _ := v.(string)
+	return s
+}
+
+// describeWrite는 글쓰기 창이 닫히지 않았을 때 오류에 넣을 설명을 만든다.
+func describeWrite(dialogs, states []string) string {
+	var parts []string
+	if len(dialogs) > 0 {
+		parts = append(parts, "알림창 "+strings.Join(dialogs, " / "))
+	}
+	if len(states) > 0 {
+		parts = append(parts, "화면 "+strings.Join(states, " / "))
+	}
+	if len(parts) == 0 {
+		return "화면 상태를 읽지 못함"
+	}
+	return strings.Join(parts, ", ")
 }
 
 // fillEditor는 글쓰기 창을 열어 content를 넣고, 편집기에 들어간 글을 줄 단위로 읽어 돌려준다. 게시하지는 않는다.

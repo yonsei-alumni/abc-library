@@ -54,6 +54,16 @@ func TestPostURL(t *testing.T) {
 // Chromium이 설치되어 있지 않으면 건너뛴다(make band-login이 설치한다).
 func evaluate(t *testing.T, file, script string, args ...any) any {
 	t.Helper()
+	v, err := openPage(t, file).Evaluate(script, args...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return v
+}
+
+// openPage는 고정 HTML을 띄운 헤드리스 브라우저 페이지를 연다.
+func openPage(t *testing.T, file string) playwright.Page {
+	t.Helper()
 	pw, err := playwright.Run(&playwright.RunOptions{Verbose: false})
 	if err != nil {
 		t.Skip("Playwright 드라이버가 없다:", err)
@@ -75,11 +85,7 @@ func evaluate(t *testing.T, file, script string, args ...any) any {
 	if err := page.SetContent(string(html)); err != nil {
 		t.Fatal(err)
 	}
-	v, err := page.Evaluate(script, args...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return v
+	return page
 }
 
 // TestCardsScript는 게시글 목록 화면을 흉내 낸 HTML에서 카드의 글 번호와 댓글 수를 읽는다.
@@ -230,5 +236,105 @@ func TestLineDiff(t *testing.T) {
 		if got := lineDiff(c.got, c.want); got != c.diff {
 			t.Errorf("lineDiff(%q, %q) = %q, want %q", c.got, c.want, got, c.diff)
 		}
+	}
+}
+
+var writeStateArgs = map[string]any{"layer": writeLayer, "editor": writeEditor, "submit": writeSubmit}
+
+// TestWriteStateScript는 게시가 막힌 글쓰기 창을 흉내 낸 HTML에서 화면 상태를 읽는다.
+func TestWriteStateScript(t *testing.T) {
+	got := raw(evaluate(t, "testdata/write.html", writeStateScript, writeStateArgs))
+	var s struct {
+		Submit struct {
+			Disabled bool `json:"disabled"`
+		} `json:"submit"`
+		Chars      int      `json:"chars"`
+		Paragraphs int      `json:"paragraphs"`
+		Cover      string   `json:"cover"`
+		Notes      []string `json:"notes"`
+	}
+	if err := json.Unmarshal([]byte(got), &s); err != nil {
+		t.Fatal(err)
+	}
+	if !s.Submit.Disabled || s.Paragraphs != 2 || s.Chars != len([]rune("가상 요약 첫 줄가상 요약 둘째 줄")) {
+		t.Errorf("버튼과 글자 수를 읽어야 한다: %s", got)
+	}
+	if s.Cover == "" {
+		t.Errorf("쓰기 창을 덮은 층을 찾아야 한다: %s", got)
+	}
+	for _, want := range []string{"본문이 너무 깁니다", "잠시 후 다시 시도하세요", "게시판을 고르세요"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("안내 %q를 읽어야 한다: %s", want, got)
+		}
+	}
+	for _, leak := range []string{"가상 요약", "회원의 글", "숨은 안내"} {
+		if strings.Contains(got, leak) {
+			t.Errorf("글 내용과 보이지 않는 안내 %q는 읽지 않아야 한다: %s", leak, got)
+		}
+	}
+}
+
+// TestWriteStateScriptWithoutEditor는 쓰기 창이 없는 게시글 목록에서 글을 읽지 않고 빈 상태를 돌려주는지 본다.
+func TestWriteStateScriptWithoutEditor(t *testing.T) {
+	got := raw(evaluate(t, "testdata/list.html", writeStateScript, writeStateArgs))
+	if !strings.Contains(got, `"chars":0`) || !strings.Contains(got, `"submit":null`) || strings.Contains(got, "회원") {
+		t.Errorf("상태 = %s", got)
+	}
+}
+
+func TestWaitWriteClosed(t *testing.T) {
+	c := &Crawler{page: openPage(t, "testdata/write.html")}
+	c.watchDialogs()
+	if _, err := c.page.Evaluate(`sel => setTimeout(() => document.querySelector(sel).remove(), 300)`, writeEditor); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.waitWriteClosed(5 * time.Second); err != nil {
+		t.Errorf("편집기가 사라지면 성공해야 한다: %v", err)
+	}
+}
+
+// TestWaitWriteClosedBlocked는 잠깐 뜬 안내와 알림창 문구가 오류에 남는지 본다.
+func TestWaitWriteClosedBlocked(t *testing.T) {
+	c := &Crawler{page: openPage(t, "testdata/write.html")}
+	c.watchDialogs()
+	if _, err := c.page.Evaluate(`() => {
+		const e = document.createElement('div');
+		e.className = 'toastLayer';
+		e.textContent = '잠깐 뜬 안내';
+		document.body.append(e);
+		setTimeout(() => e.remove(), 1500);
+		setTimeout(() => alert('가상 알림창 문구'), 200);
+	}`); err != nil {
+		t.Fatal(err)
+	}
+	err := c.waitWriteClosed(3 * time.Second)
+	if err == nil {
+		t.Fatal("편집기가 그대로면 실패해야 한다")
+	}
+	for _, want := range []string{"잠깐 뜬 안내", "alert: 가상 알림창 문구", "게시판을 고르세요"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("오류에 %q가 없다: %v", want, err)
+		}
+	}
+	if strings.Contains(err.Error(), "가상 요약") {
+		t.Errorf("오류에 글 내용이 들어가면 안 된다: %v", err)
+	}
+}
+
+func TestDescribeWrite(t *testing.T) {
+	if got := describeWrite(nil, nil); got != "화면 상태를 읽지 못함" {
+		t.Errorf("빈 설명 = %q", got)
+	}
+	if got := describeWrite([]string{"alert: 가"}, []string{"{}", "{1}"}); got != "알림창 alert: 가, 화면 {} / {1}" {
+		t.Errorf("설명 = %q", got)
+	}
+}
+
+func TestShorten(t *testing.T) {
+	if got := shorten("가나다", 3); got != "가나다" {
+		t.Errorf("경계값 = %q", got)
+	}
+	if got := shorten("가나다라", 3); got != "가나다…" {
+		t.Errorf("줄임 = %q", got)
 	}
 }
