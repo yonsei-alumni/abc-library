@@ -24,6 +24,7 @@
 </template>
 <script>
   window.confirms = 0;
+  window.submits = 0;
   setTimeout(() => {
     document.body.append(document.getElementById('board').content.cloneNode(true));
     document.querySelector('.lyBoardSelect button.-confirm').addEventListener('click', () => {
@@ -33,9 +34,16 @@
       window.chosen = checked.parentElement.innerText.trim();
       if (window.keepOpen) return;
       document.querySelector('.lyBoardSelect').remove();
-      document.querySelector('._richEditor').remove();
+      // 밴드처럼 고른 게시판을 본문에 넣고 글쓰기 창으로 돌아간다. 글은 게시 버튼을 다시 눌러야 올라간다.
+      const p = document.createElement('p');
+      p.textContent = window.chosen;
+      document.querySelector('._richEditor').append(p);
     });
   }, 300);
+  document.querySelector('._btnSubmitPost').addEventListener('click', () => {
+    window.submits++;
+    if (window.chosen && !window.keepEditor) document.querySelector('._richEditor').remove();
+  });
 </script>
 </body>
 </html>

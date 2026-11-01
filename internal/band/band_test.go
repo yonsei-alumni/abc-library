@@ -348,7 +348,16 @@ func chosenBoard(t *testing.T, c *Crawler) string {
 	return raw(v)
 }
 
-// TestWaitWriteClosedChoosesBoard는 게시판 선택 창이 늦게 떠도 게시판을 고르고 확인을 누르는지 본다.
+func pageCount(t *testing.T, c *Crawler, name string) any {
+	t.Helper()
+	v, err := c.page.Evaluate(`name => window[name]`, name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return v
+}
+
+// TestWaitWriteClosedChoosesBoard는 게시판 선택 창이 늦게 떠도 게시판을 고르고 확인을 누른 뒤 게시 버튼을 한 번 더 누르는지 본다.
 // 고정 HTML에는 숨은 확인 버튼이 뒤에 있어서 보이는 버튼을 눌러야 창이 닫힌다.
 func TestWaitWriteClosedChoosesBoard(t *testing.T) {
 	c := &Crawler{Board: "자유게시판", page: openPage(t, "testdata/board.html")}
@@ -358,6 +367,9 @@ func TestWaitWriteClosedChoosesBoard(t *testing.T) {
 	}
 	if got := chosenBoard(t, c); got != "#자유게시판" {
 		t.Errorf("고른 게시판 = %q", got)
+	}
+	if got := pageCount(t, c, "submits"); got != 1 {
+		t.Errorf("게시 버튼을 누른 수 = %v", got)
 	}
 }
 
@@ -388,8 +400,23 @@ func TestWaitWriteClosedNoBoardSet(t *testing.T) {
 	}
 }
 
-// TestWaitWriteClosedChoosesOnce는 확인을 눌러도 창이 닫히지 않을 때 게시판을 다시 고르지 않는지 본다.
-// 게시판을 한 번만 고르는 것은 글을 두 번 올리지 않기 위해서다.
+// TestWaitWriteClosedSubmitsOnce는 게시판을 고르고 게시해도 글쓰기 창이 닫히지 않을 때 게시 버튼을 되풀이해 누르지 않는지 본다.
+func TestWaitWriteClosedSubmitsOnce(t *testing.T) {
+	c := &Crawler{Board: "자유게시판", page: openPage(t, "testdata/board.html")}
+	c.watchDialogs()
+	if _, err := c.page.Evaluate(`() => { window.keepEditor = true; }`); err != nil {
+		t.Fatal(err)
+	}
+	err := c.waitWriteClosed(5 * time.Second)
+	if err == nil || !strings.Contains(err.Error(), "게시판 고름: 자유게시판") {
+		t.Fatalf("고른 사실을 오류에 남겨야 한다: %v", err)
+	}
+	if got := pageCount(t, c, "submits"); got != 1 {
+		t.Errorf("게시 버튼을 누른 수 = %v", got)
+	}
+}
+
+// TestWaitWriteClosedChoosesOnce는 확인을 눌러도 게시판 창이 닫히지 않으면 창을 덮인 채로 게시하지 않고 실패하는지 본다.
 func TestWaitWriteClosedChoosesOnce(t *testing.T) {
 	c := &Crawler{Board: "자유게시판", page: openPage(t, "testdata/board.html")}
 	c.watchDialogs()
@@ -397,15 +424,14 @@ func TestWaitWriteClosedChoosesOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	err := c.waitWriteClosed(4 * time.Second)
-	if err == nil || !strings.Contains(err.Error(), "게시판 고름: 자유게시판") || !strings.Contains(err.Error(), "checked") {
-		t.Fatalf("고른 사실과 게시판 창의 구조를 오류에 남겨야 한다: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "게시 버튼을 누르지 못했습니다") || !strings.Contains(err.Error(), "checked") {
+		t.Fatalf("실패와 게시판 창의 구조를 오류에 남겨야 한다: %v", err)
 	}
-	v, evalErr := c.page.Evaluate(`() => window.confirms`)
-	if evalErr != nil {
-		t.Fatal(evalErr)
+	if got := pageCount(t, c, "confirms"); got != 1 {
+		t.Errorf("확인을 누른 수 = %v", got)
 	}
-	if v != 1 {
-		t.Errorf("확인을 누른 수 = %v", v)
+	if got := pageCount(t, c, "submits"); got != 0 {
+		t.Errorf("덮인 게시 버튼이 눌리면 안 된다: %v", got)
 	}
 }
 

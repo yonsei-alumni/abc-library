@@ -193,7 +193,7 @@ func (c *Crawler) waitWriteClosed(timeout time.Duration) error {
 		if s != "" && len(states) < maxWriteStates && !slices.Contains(states, s) {
 			states = append(states, s)
 		}
-		// 두 번 올리지 않도록 게시판은 한 번만 고르고, 고른 뒤에 게시 버튼을 다시 누르지 않는다.
+		// 게시 버튼을 되풀이해 누르면 글이 두 번 올라갈 수 있으므로 게시판은 한 번만 고른다.
 		if !chosen {
 			var err error
 			if chosen, err = c.chooseBoard(); err != nil {
@@ -210,7 +210,7 @@ func (c *Crawler) waitWriteClosed(timeout time.Duration) error {
 	return fmt.Errorf("게시한 뒤 글쓰기 창이 닫히지 않았습니다(%s)", describeWrite(c.takeDialogs(), states))
 }
 
-// chooseBoard는 게시판 선택 창이 떠 있으면 c.Board를 고르고 확인을 누른다. 창이 없으면 false를 돌려준다.
+// chooseBoard는 게시판 선택 창이 떠 있으면 c.Board를 고르고 확인을 누른 뒤 게시 버튼을 다시 누른다. 창이 없으면 false를 돌려준다.
 // 게시판을 쓰지 않는 밴드에는 창이 뜨지 않는다. Playwright의 클릭은 게시판 항목에 닿지 않아서(2026-11 실측) 페이지에서 직접 누른다.
 func (c *Crawler) chooseBoard() (bool, error) {
 	if visible, err := c.page.GetByText(boardPrompt).First().IsVisible(); err != nil || !visible {
@@ -226,6 +226,13 @@ func (c *Crawler) chooseBoard() (bool, error) {
 	time.Sleep(500 * time.Millisecond)
 	if !c.clickText("확인") {
 		return false, fmt.Errorf("게시판 선택 창의 확인을 누르지 못했습니다(%s)", c.describeBoard())
+	}
+	// 확인을 누르면 밴드는 창을 닫고 글쓰기 창으로 돌아갈 뿐 글을 올리지 않는다(2026-11 실측: 90초 동안 그대로이고 본문만 7자, 2문단 늘었다).
+	// 첫 클릭은 이 창에 막혀서 올라가지 않았으므로 여기서 한 번 더 눌러도 글은 하나만 올라간다.
+	time.Sleep(500 * time.Millisecond)
+	click := playwright.LocatorClickOptions{Timeout: playwright.Float(float64(boardClickTimeout.Milliseconds()))}
+	if err := c.page.Locator(writeSubmit).First().Click(click); err != nil {
+		return false, fmt.Errorf("게시판을 고른 뒤 게시 버튼을 누르지 못했습니다(%s)", c.describeBoard())
 	}
 	return true, nil
 }
