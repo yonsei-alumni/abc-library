@@ -365,8 +365,11 @@ func TestWaitWriteClosedUnknownBoard(t *testing.T) {
 	c := &Crawler{Board: "없는게시판", page: openPage(t, "testdata/board.html")}
 	c.watchDialogs()
 	err := c.waitWriteClosed(8 * time.Second)
-	if err == nil || !strings.Contains(err.Error(), "게시판 없는게시판를 고르지 못했습니다") || !strings.Contains(err.Error(), "#자유게시판") {
-		t.Errorf("없는 게시판은 실패하고 화면의 게시판 목록을 남겨야 한다: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "#없는게시판 항목을 누르지 못했습니다") || !strings.Contains(err.Error(), "#자유게시판") {
+		t.Fatalf("없는 게시판은 실패하고 화면의 게시판 목록을 남겨야 한다: %v", err)
+	}
+	if !strings.Contains(err.Error(), "lyBoardSelect") || !strings.Contains(err.Error(), `type="radio"`) {
+		t.Errorf("게시판 창의 구조를 오류에 남겨야 한다: %v", err)
 	}
 	if strings.Contains(err.Error(), "가상 요약") {
 		t.Errorf("오류에 글 내용이 들어가면 안 된다: %v", err)
@@ -394,8 +397,8 @@ func TestWaitWriteClosedChoosesOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	err := c.waitWriteClosed(4 * time.Second)
-	if err == nil || !strings.Contains(err.Error(), "게시판 자유게시판을 고름") {
-		t.Fatalf("고른 사실을 오류에 남겨야 한다: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "게시판 고름: 자유게시판") || !strings.Contains(err.Error(), "checked") {
+		t.Fatalf("고른 사실과 게시판 창의 구조를 오류에 남겨야 한다: %v", err)
 	}
 	v, evalErr := c.page.Evaluate(`() => window.confirms`)
 	if evalErr != nil {
@@ -403,5 +406,37 @@ func TestWaitWriteClosedChoosesOnce(t *testing.T) {
 	}
 	if v != 1 {
 		t.Errorf("확인을 누른 수 = %v", v)
+	}
+}
+
+// TestClickTextScript는 편집기, 게시글 카드, 보이지 않는 요소의 글자는 누르지 않는지 본다.
+func TestClickTextScript(t *testing.T) {
+	cases := []struct {
+		text string
+		want bool
+	}{
+		{"본문이 너무 깁니다", true},
+		{"본문이 너무", false},
+		{"가상 요약 첫 줄", false},
+		{"다른 회원의 글", false},
+		{"숨은 안내", false},
+	}
+	for _, tc := range cases {
+		if got := evaluate(t, "testdata/write.html", clickTextScript, tc.text); got != tc.want {
+			t.Errorf("%q를 눌렀는지 = %v, want %v", tc.text, got, tc.want)
+		}
+	}
+}
+
+// TestBoardLayerScript는 게시판 창이 없을 때 편집기나 글 내용을 읽지 않는지 본다.
+func TestBoardLayerScript(t *testing.T) {
+	if got := raw(evaluate(t, "testdata/write.html", boardLayerScript, boardPrompt)); got != "" {
+		t.Errorf("창이 없으면 비어야 한다: %q", got)
+	}
+	if got := raw(evaluate(t, "testdata/write.html", boardLayerScript, "가상 요약 첫 줄")); got != "" {
+		t.Errorf("편집기 안의 글은 읽지 않아야 한다: %q", got)
+	}
+	if got := raw(evaluate(t, "testdata/write.html", boardLayerScript, "다른 회원의 글")); got != "" {
+		t.Errorf("게시글 카드는 읽지 않아야 한다: %q", got)
 	}
 }

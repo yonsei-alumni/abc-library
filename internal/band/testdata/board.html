@@ -1,7 +1,8 @@
 <!doctype html>
 <html lang="ko">
 <body style="margin:0">
-<!-- 게시판을 쓰는 밴드의 게시판 선택 창을 흉내 낸 가상의 화면이다. 창은 게시 버튼을 누른 뒤 조금 늦게 뜬다. -->
+<!-- 게시판을 쓰는 밴드의 게시판 선택 창을 흉내 낸 가상의 화면이다. 창은 게시 버튼을 누른 뒤 조금 늦게 뜬다.
+     항목에는 숨은 글자가 섞여 있고 투명한 층이 덮고 있어서 Playwright의 글자 찾기와 클릭이 닿지 않는다. -->
 <section class="_lyWrap">
   <div class="contentEditor _richEditor" contenteditable="true"><p>가상 요약 첫 줄</p></div>
   <button class="uButton _btnSubmitPost -confirm">게시</button>
@@ -13,7 +14,7 @@
     <p>게시판을 선택해야 글이 등록됩니다.</p>
     <ul>
       <li><label><input type="radio" name="board"><span class="text">#공지사항</span></label></li>
-      <li><label><input type="radio" name="board"><span class="text">#자유게시판</span></label></li>
+      <li style="position:relative"><label><input type="radio" name="board"><span class="text">#자유게시판<span style="display:none">숨은 글자</span></span></label><i style="position:absolute;inset:0"></i></li>
       <li><label><input type="radio" name="board"><span class="text">#자유게시판_옛글</span></label></li>
     </ul>
     <button class="uButton">취소</button>

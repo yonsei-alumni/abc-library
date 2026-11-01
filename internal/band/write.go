@@ -25,8 +25,8 @@ const (
 	// boardPrompt는 게시판 선택 창의 안내 문구다. 게시판을 쓰는 밴드는 게시 버튼을 누르면 이 창을 띄우고,
 	// 게시판을 고르지 않으면 글을 올리지 않는다.
 	boardPrompt = "게시판을 선택해야 글이 등록됩니다"
-	// boardClickTimeout은 게시판 선택 창의 항목과 확인을 누를 때 기다리는 시간(밀리초)이다.
-	boardClickTimeout = 5000
+	// boardClickTimeout은 게시판 선택 창의 항목과 확인이 나타나기를 기다리는 시간이다.
+	boardClickTimeout = 5 * time.Second
 
 	// writeCloseTimeout은 게시 버튼을 누른 뒤 글쓰기 창이 닫히기를 기다리는 시간이다.
 	writeCloseTimeout = 90 * time.Second
@@ -65,6 +65,38 @@ const writeStateScript = `({layer, editor, submit}) => {
     cover,
     notes: [...new Set(notes)].slice(0, 5),
   });
+}`
+
+// clickTextScript는 보이는 글자가 text와 똑같은 요소 중 맨 뒤의 것을 페이지에서 직접 누르고, 눌렀는지 돌려준다.
+// 편집기와 게시글 카드 속 글자는 누르지 않는다.
+const clickTextScript = `text => {
+  const clean = e => (e.innerText || '').trim().replace(/\s+/g, ' ');
+  const shown = e => { const r = e.getBoundingClientRect(), s = getComputedStyle(e);
+    return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none'; };
+  const hit = [...document.querySelectorAll('body *')]
+    .filter(e => !e.closest('article, [contenteditable=true], script, style') && shown(e) && clean(e) === text
+      && ![...e.children].some(k => clean(k) === text)).at(-1);
+  if (!hit) return false;
+  hit.click();
+  return true;
+}`
+
+// boardLayerScript는 게시판 선택 창의 구조를 읽는다. 창을 고치지 못했을 때 오류에 남긴다.
+// 편집기와 게시글 카드를 품지 않는 범위까지만 올라가고, 태그와 일부 속성과 게시판 이름만 남긴다.
+const boardLayerScript = `prompt => {
+  const ed = document.querySelector('[contenteditable=true]');
+  let e = [...document.querySelectorAll('body *')].filter(x => (x.textContent || '').includes(prompt)).at(-1);
+  if (!e || e.closest('article, [contenteditable=true]')) return '';
+  const safe = p => p && p !== document.body && !p.contains(ed) && !p.querySelector('article');
+  while (safe(e.parentElement)) e = e.parentElement;
+  const copy = e.cloneNode(true);
+  copy.querySelectorAll('img, svg, [contenteditable]').forEach(x => x.remove());
+  [copy, ...copy.querySelectorAll('*')].forEach(x => {
+    if (x.checked) x.setAttribute('checked', '');
+    [...x.attributes].forEach(a => {
+      if (!['class', 'type', 'role', 'checked', 'disabled'].includes(a.name)) x.removeAttribute(a.name); });
+  });
+  return copy.outerHTML.replace(/\s+/g, ' ').slice(0, 4000);
 }`
 
 // recentTextsScript는 게시글 목록 첫 화면에 그려진 글의 본문만 읽는다. 작성자 영역은 읽지 않는다.
@@ -168,15 +200,18 @@ func (c *Crawler) waitWriteClosed(timeout time.Duration) error {
 				return err
 			}
 			if chosen {
-				states = append(states, "게시판 "+c.Board+"을 고름")
+				states = append(states, "게시판 고름: "+c.Board)
 			}
 		}
+	}
+	if l := c.boardLayer(); l != "" {
+		states = append(states, l)
 	}
 	return fmt.Errorf("게시한 뒤 글쓰기 창이 닫히지 않았습니다(%s)", describeWrite(c.takeDialogs(), states))
 }
 
 // chooseBoard는 게시판 선택 창이 떠 있으면 c.Board를 고르고 확인을 누른다. 창이 없으면 false를 돌려준다.
-// 게시판을 쓰지 않는 밴드에는 창이 뜨지 않는다. 오류에는 Playwright의 호출 기록 대신 화면 상태를 넣는다.
+// 게시판을 쓰지 않는 밴드에는 창이 뜨지 않는다. Playwright의 클릭은 게시판 항목에 닿지 않아서(2026-11 실측) 페이지에서 직접 누른다.
 func (c *Crawler) chooseBoard() (bool, error) {
 	if visible, err := c.page.GetByText(boardPrompt).First().IsVisible(); err != nil || !visible {
 		return false, nil
@@ -184,16 +219,43 @@ func (c *Crawler) chooseBoard() (bool, error) {
 	if c.Board == "" {
 		return false, errors.New("게시판 선택 창이 떴지만 고를 게시판이 정해지지 않았습니다")
 	}
-	exact := playwright.PageGetByTextOptions{Exact: playwright.Bool(true)}
-	click := playwright.LocatorClickOptions{Timeout: playwright.Float(boardClickTimeout)}
 	// 화면의 게시판 이름은 #으로 시작한다.
-	if err := c.page.GetByText("#"+c.Board, exact).Locator("visible=true").First().Click(click); err != nil {
-		return false, fmt.Errorf("게시판 %s를 고르지 못했습니다(%s)", c.Board, describeWrite(c.takeDialogs(), []string{c.writeState()}))
+	if !c.clickText("#" + c.Board) {
+		return false, fmt.Errorf("게시판 선택 창에서 #%s 항목을 누르지 못했습니다(%s)", c.Board, c.describeBoard())
 	}
-	if err := c.page.GetByText("확인", exact).Locator("visible=true").Last().Click(click); err != nil {
-		return false, fmt.Errorf("게시판 선택 창의 확인을 누르지 못했습니다(%s)", describeWrite(c.takeDialogs(), []string{c.writeState()}))
+	time.Sleep(500 * time.Millisecond)
+	if !c.clickText("확인") {
+		return false, fmt.Errorf("게시판 선택 창의 확인을 누르지 못했습니다(%s)", c.describeBoard())
 	}
 	return true, nil
+}
+
+// clickText는 글자가 text인 요소가 나타나기를 기다려서 누른다.
+func (c *Crawler) clickText(text string) bool {
+	for deadline := time.Now().Add(boardClickTimeout); ; time.Sleep(200 * time.Millisecond) {
+		v, err := c.page.Evaluate(clickTextScript, text)
+		if clicked, _ := v.(bool); err == nil && clicked {
+			return true
+		}
+		if time.Now().After(deadline) {
+			return false
+		}
+	}
+}
+
+// boardLayer는 게시판 선택 창의 구조를 읽는다. 창이 없으면 빈 문자열이다.
+func (c *Crawler) boardLayer() string {
+	v, err := c.page.Evaluate(boardLayerScript, boardPrompt)
+	if err != nil {
+		return ""
+	}
+	s, _ := v.(string)
+	return s
+}
+
+// describeBoard는 게시판을 고르지 못했을 때 오류에 넣을 설명을 만든다.
+func (c *Crawler) describeBoard() string {
+	return describeWrite(c.takeDialogs(), []string{c.writeState(), c.boardLayer()})
 }
 
 // writeState는 지금 화면의 상태를 JSON으로 읽는다. 읽지 못하면 빈 문자열이다.
