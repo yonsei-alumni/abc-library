@@ -34,6 +34,12 @@ make status       # 최근 배치 실행 기록
 make web-prod     # 로컬 코드를 운영 데이터로 실행
 ```
 
+배치 실행은 Google Cloud 콘솔에서 본다. 실패했는지는 알림 메일보다 실행 내역으로 판단한다.
+
+- [배치 실행 내역](https://console.cloud.google.com/run/jobs/details/asia-northeast3/abc-batch/executions?project=abc-library-512606): 실행마다 성공, 실패, 걸린 시간
+- [배치 로그](https://console.cloud.google.com/run/jobs/details/asia-northeast3/abc-batch/logs?project=abc-library-512606): 확인한 글, 추출한 책, 실패 수
+- [Cloud Scheduler](https://console.cloud.google.com/cloudscheduler?project=abc-library-512606): 일일 배치(`abc-batch-daily`)와 주간 요약(`abc-batch-weekly`)의 실행 시각
+
 ## 문서
 
 - [기능 명세](docs/spec.md): 화면, 배치 흐름, 데이터 모델, 배포
