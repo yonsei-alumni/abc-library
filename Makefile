@@ -1,6 +1,6 @@
 .PHONY: fmt lint test check ci test-integration \
 	db-up db-seed db-psql db-down db-reset web batch-local \
-	web-prod migrate migrate-unlock band-login batch status \
+	web-prod migrate migrate-unlock band-login band-renew batch status \
 	gcp-setup gcp-schedule band-secret deploy-web deploy-batch firebase-hosting release
 
 # 로컬 PostgreSQL(compose.yaml의 db) 연결. 이 컴퓨터에서만 쓰는 개발용 값이라 비밀이 아니다.
@@ -89,6 +89,10 @@ gcp-schedule:
 # 밴드 세션이 만료되면 make band-login 뒤에 실행한다.
 band-secret:
 	scripts/band-secret.sh
+
+# 밴드 세션이 만료되기 전이나 후에 이것 하나만 실행한다. 로그인(창에서 직접)과 비밀 갱신을 이어서 한다.
+# 로그인이 실패하거나 시간이 지나면 예전 세션 파일을 올리지 않도록 거기서 멈춘다.
+band-renew: band-login band-secret
 
 deploy-web:
 	scripts/deploy.sh web

@@ -91,7 +91,7 @@ if [[ -z "$(gcloud beta monitoring policies list --project "$PROJECT" \
   "notificationChannels": ["$channel"],
   "documentation": {
     "mimeType": "text/markdown",
-    "content": "abc-library 일일 배치가 실패했습니다. Cloud Run Job 로그에서 원인을 확인하세요. 밴드 세션이 만료되었으면 로컬에서 make band-login, make band-secret을 실행합니다."
+    "content": "abc-library 일일 배치가 실패했습니다. Cloud Run Job 로그에서 원인을 확인하세요. 밴드 세션이 만료되었으면 로컬에서 make band-renew를 실행합니다."
   }
 }
 EOF

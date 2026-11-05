@@ -29,6 +29,7 @@ make release      # main을 release로 옮겨서 배포(마이그레이션이 �
 make migrate      # 운영 DB 스키마 적용(make release를 쓰지 않고 release에 merge할 때)
 make migrate-unlock  # 마이그레이션 중에 강제로 끝나서 남은 잠금 풀기(migrations table is already locked)
 make band-login   # 밴드에 직접 로그인해서 세션 저장
+make band-renew   # 밴드 로그인 뒤 운영 비밀(Secret Manager)까지 갱신. 세션이 만료되면 이것 하나만 실행
 make batch        # 밴드 글 수집과 책 추출
 make status       # 최근 배치 실행 기록
 make web-prod     # 로컬 코드를 운영 데이터로 실행
