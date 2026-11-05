@@ -127,6 +127,12 @@ func login() error {
 		return err
 	}
 	fmt.Printf("세션을 %s에 저장했습니다. 이 파일은 비밀번호처럼 다루세요.\n", statePath())
+	// 로그인 유지가 먹혔는지 보려고 만료 시각만 보여 준다. 쿠키 값은 출력하지 않는다.
+	if lifetimes, err := band.SessionLifetimes(statePath()); err == nil {
+		for _, l := range lifetimes {
+			fmt.Println(l.Describe(time.Now()))
+		}
+	}
 	return nil
 }
 
